@@ -3,6 +3,18 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Compiled MEX binaries (all platforms)
+*.mex*
+
+# Simulink Code Generation
+slprj/
+
+# Windows default autosave extension
+*.asv
+
+# Session info
+octave-workspace
+
 # C extensions
 *.so
 
@@ -99,3 +111,13 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+# Temporary file and backup of editors
+*~
+*.bak
+*.swp
+\#*
+.\#*
+
+# configuration files
+.ackrc
