@@ -27,9 +27,10 @@ def read_default_lut():
             if not line.startswith('#') and not len(line) == 0:
                 toks = line.split()
                 lut[int(toks[0])] = {'name':toks[1],
-                                     'Color':[int(toks[2]),
+                                     'color':[int(toks[2]),
                                               int(toks[3]),
-                                              int(toks[4])]}
+                                              int(toks[4]),
+                                              int(toks[5])]}
                 
     return lut
 

@@ -161,10 +161,12 @@ def main():
             if not options.split:
                 # merge surface gifti files
                 logger.info('Merging meshes for all labels of ' \
-                            'subject %s to %s...', subject, merged_mesh_fn)
+                            'subject %s...', subject)
     
                 label_mask = merge_surfaces(all_mesh_fns, merged_mesh_fn,
                                             labels)
+                write_annot_and_stats(subject_dir,
+                                      label_mask)
         else:
             logger.info('Skipping subject %s (Mesh of subcortical ' \
                         'structures already exists: %s).',
@@ -172,6 +174,33 @@ def main():
 
         [os.remove(fn) for fn in tmp_files]
 
+def write_annot_and_stats(subject_dir, label_mask):
+    from read_default_lut import read_default_lut
+    
+    labels = np.unique(label_mask)
+
+    label_mask_rebased = np.zeros_like(label_mask).astype(int)
+    lut = read_default_lut()
+
+    # ctab = np.zeros((len(labels),5), dtype=int)
+    # names = [''] * (len(labels))
+    # for ilabel,label in enumerate(labels):
+    #     label_mask_rebased[np.where(label_mask==label)] = ilabel
+    #     ctab[ilabel,:] = lut[label]['color'] + [ilabel]
+    #     names[ilabel] = lut[label]['name']
+
+    ctab = np.array([lut[label]['color'] + [label] for label in sorted(lut.keys())],
+                    dtype=int)
+    names = [lut[label]['name'] for label in sorted(lut.keys())]
+    annot_fn = op.join(subject_dir, 'label', 'aseg.surf.annot.ctab')
+
+    logger.info('Writing annotation file: %s ...', annot_fn)
+    nibabel.freesurfer.write_annot(annot_fn, label_mask_rebased, ctab, names)
+
+    dd
+    stats_fn = op.join(subject_dir, 'stats', 'aseg.stats')
+        
+        
 def merge_surfaces(mesh_fns, merged_mesh_fn, labels=None):
     
     if labels is None:
@@ -180,32 +209,43 @@ def merge_surfaces(mesh_fns, merged_mesh_fn, labels=None):
     meshes = [nibabel.load(mesh_fn) for mesh_fn in mesh_fns]
 
     all_coords = np.concatenate(tuple(m.darrays[0].data for m in meshes))
-    all_coords = nibabel.gifti.GiftiDataArray(data=all_coords,
-                                              intent=meshes[0].darrays[0].intent,
-                                              datatype=meshes[0].darrays[0].datatype,
-                                              encoding=meshes[0].darrays[0].encoding,
-                                              coordsys=meshes[0].darrays[0].coordsys)
-    shifts = np.concatenate(([0], np.cumsum([len(m.darrays[0].data)
-                                             for m in meshes])))
+    intent = 'NIFTI_INTENT_POINTSET'
+    all_coords = nibabel.gifti.GiftiDataArray.from_array(all_coords, intent)
+                                              # intent=meshes[0].darrays[0].intent,
+                                              # datatype=meshes[0].darrays[0].datatype,
+                                              # encoding=meshes[0].darrays[0].encoding,
+                                              # coordsys=meshes[0].darrays[0].coordsys)
+    shifts = np.concatenate(([0], np.cumsum([m.darrays[0].data.shape[0]
+                                             for m in meshes])))[:-1]
     all_faces = np.concatenate(tuple(m.darrays[1].data + s
                                      for m,s in zip(meshes, shifts)))
-    all_faces = nibabel.gifti.GiftiDataArray(data=all_faces,
-                                              intent=meshes[0].darrays[1].intent,
-                                              datatype=meshes[0].darrays[1].datatype,
-                                              encoding=meshes[0].darrays[1].encoding)
-    merged_mesh = nibabel.gifti.GiftiImage(meshes[0].header, meshes[0].extra,
-                                           darrays=[all_coords, all_faces])
-    merged_mesh.to_filename(add_suffix(merged_mesh_fn, '.surf'))
+    intent = 'NIFTI_INTENT_TRIANGLE'
+    all_faces = nibabel.gifti.GiftiDataArray.from_array(all_faces, intent)
+                                              # intent=meshes[0].darrays[1].intent,
+                                              # datatype=meshes[0].darrays[1].datatype,
+                                              # encoding=meshes[0].darrays[1].encoding)
+    merged_mesh = nibabel.gifti.GiftiImage()#meshes[0].header, meshes[0].extra)
+    merged_mesh.add_gifti_data_array(all_coords)
+    merged_mesh.add_gifti_data_array(all_faces)
 
-    label_mask = np.concatenate(tuple(np.zeros(len(m.darrays[0].data), dtype=int) + l 
+    merged_mesh_surf_fn = add_suffix(merged_mesh_fn, '.surf')
+    logger.info('Saving merged mesh to %s ...', merged_mesh_surf_fn)
+    merged_mesh.to_filename(merged_mesh_surf_fn)
+    
+    
+    label_mask = np.concatenate(tuple(np.zeros(m.darrays[0].data.shape[0], dtype=int)+l 
                                       for l,m in zip(labels,meshes)))
-    label_mask = nibabel.gifti.GiftiDataArray(data=label_mask,
-                                              intent='NIFTI_INTENT_LABEL',
-                                              datatype='NIFTI_TYPE_INT32')
+    
+    gda_lmask = nibabel.gifti.GiftiDataArray.from_array(label_mask.astype(np.int32),
+                                                        intent='NIFTI_INTENT_LABEL',
+                                                        datatype='NIFTI_TYPE_INT32')
 
-    labels_mask_img = nibabel.gifti.GiftiImage(darrays=[label_mask])
-    labels_mask_img.to_filename(add_suffix(merged_mesh_fn, '.label'))
-        
+    labels_mask_img = nibabel.gifti.GiftiImage(darrays=[gda_lmask])
+    
+    merged_mesh_label_fn = add_suffix(merged_mesh_fn, '.label')
+    logger.info('Saving labels of merged mesh to %s ...', merged_mesh_label_fn)
+    labels_mask_img.to_filename(merged_mesh_label_fn)
+
     return label_mask
 
 def get_labels_from_opt(labels_opt, authorized=None):
