@@ -1,12 +1,15 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Produce surfaces of subcortical structures (hippocampus, thalamus, cerrebelum, ...) as well as annotation files and mapped data (volume ...)
+Produce surfaces of subcortical structures (hippocampus, thalamus, cerrebelum, ...) as well as mappable morphometrics data (volume ...) from freesurfer 
+segmentation results produced by recon-all.
 
 Usage::
 
-    gen_subcortical_meshes SUBJECT_LIST [--merge --labels <LABEL_IDS> 
-                       --subject_dir=<path_to_freesurfer_subject_dir>]
+    gen_subcortical_meshes SUBJECT_LIST 
+                           [--labels <LABEL_IDS> 
+                            --subject_dir=<path_to_freesurfer_subject_dir>
+                            --force --split --verbose <VERBOSE_LEVEL>]
 """
 import sys
 import os
@@ -26,22 +29,21 @@ import numpy as np
 import nibabel
 from nibabel import gifti
 
-DEFAULT_LABELS = '7,8,10,11,12,13,16,17,18,24,26,28,31,44,46,47,49,'\
-                 '50,51,52,53,54,58,60,63,251,252,253,254,255'
-
 fs_home = os.getenv('FREESURFER_HOME')
 fs_lut_fn = op.join(fs_home, 'FreeSurferColorLUT.txt')
+
+DEFAULT_LABELS = '7,8,10,11,12,13,16,17,18,24,26,28,31,44,46,47,49,'\
+                 '50,51,52,53,54,58,60,63,251,252,253,254,255'
 
 USAGE = 'usage: %%prog [options] SUBJECT_LIST'
 DESCRIPTION = 'Generate subcortical meshes from freesurfer volumic ' \
               'segmentation. SUBJECT_LIST is comma-separated list of ' \
               'freesurfer subject ids (no space).'
+MIN_ARGS = 1
+MAX_ARGS = 1
 
 logging.basicConfig(stream=sys.stdout)
 logger = logging.getLogger('[FS subcortical extraction]')
-
-MIN_ARGS = 1
-MAX_ARGS = 1
 
 def main():
     parser = OptionParser(usage=USAGE, description=DESCRIPTION)
@@ -61,14 +63,16 @@ def main():
     parser.add_option('-x', '--split', action='store_true', default=False,
                       help='Do not merge all meshes into one')
 
-    parser.add_option('-d', '--debug-outputs', action='store_true', default=False,
+    parser.add_option('-d', '--debug-outputs', action='store_true',
+                      default=False,
                       help='Write debugging outputs (vertex ids, labelling...)')
     
     parser.add_option('-f', '--force', action='store_true', default=False,
                       help='Force recomputation even if mesh already exists')
 
-    parser.add_option('-v', '--verbose', dest='verbose', metavar='VERBOSELEVEL',
-                  type='int', default=0, help='Verbose level')
+    parser.add_option('-v', '--verbose', dest='verbose',
+                      metavar='VERBOSELEVEL',
+                      type='int', default=0, help='Verbose level')
 
     (options, args) = parser.parse_args()
 
@@ -275,8 +279,9 @@ def merge_surfaces(mesh_fns, merged_mesh_fn, labels=None, write_extras=False):
 
     all_coords = np.concatenate(tuple(m.darrays[0].data for m in meshes))
     intent = 'NIFTI_INTENT_POINTSET'
-    coord_system = meshes[0].darrays[0].coordsys
-    gda_all_coords = gifti.GiftiDataArray(data=all_coords, intent=intent)
+    # coord_system = meshes[0].darrays[0].coordsys
+    gda_all_coords = gifti.GiftiDataArray(data=all_coords,
+                                          intent=intent)
                                           #coordsys=coord_system)
     # datatype=meshes[0].darrays[0].datatype,
     # encoding=meshes[0].darrays[0].encoding,
