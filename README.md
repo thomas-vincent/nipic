@@ -1,2 +1,2 @@
 # nipic
-Set of tools/helpers for processing of neuroimaging data
+Set of tools/helpers to process neuroimaging data
