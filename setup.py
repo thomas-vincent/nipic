@@ -72,6 +72,6 @@ setup(name='nipic', version=version['__version__'],
               'tag_angio_lesions = nipic.commands.tag_angio_lesions:main',
               'auto_angio_lesions = nipic.commands.auto_angio_lesions:main',
               'fs_lut_dict = nipic.commands.fs_lut_dict:main',
-              'dcm_export = nipic.commands.dcm_rename:main'
+              'dcm_export_to_nii = nipic.commands.dcm_export_to_nii:main'
           ],
       })

@@ -24,7 +24,7 @@ def main():
     min_args = 2
     max_args = 2
 
-    usage = 'usage: %prog [options] OUTPUT_FOLDER [DICOM_FOLDER|DICOM_FILE]'
+    usage = 'usage: %prog [options] [DICOM_FOLDERS|DICOM_FILES] OUTPUT_FOLDER'
     description = 'Copy/move Dicom files using file names composed from header data.'
 
     parser = OptionParser(usage=usage, description=description)
@@ -54,9 +54,9 @@ def main():
         parser.print_help()
         return 1
 
-    output_dcm_path = args[0]
-    input_dcm_path = args[1]
-    dcm_tagged_export(input_dcm_path, output_dcm_path, output_pattern=BIDS_PATTERN,
+    output_dcm_path = args[-1]
+    input_dcm_pathes = args[:-1]
+    dcm_tagged_export(input_dcm_pathes, output_dcm_path, output_pattern=BIDS_PATTERN,
                       file_operation_func=shutil.copy, time_point=options.time_point)
     
 def walk_files(root):
@@ -64,12 +64,18 @@ def walk_files(root):
         for fn in fns:
             yield op.join(path, fn)
             
-def list_files(root):
-    all_fns = []
+def list_files(root, all_fns=None):
+    all_fns = [] if all_fns is None else all_fns
     for path, subdirs, fns in os.walk(root):
         all_fns.extend(op.join(path, fn) for fn in fns)
     return all_fns
             
+def list_leaf_dirs(root, all_dirs=None):
+    all_dirs = [] if all_dirs is None else all_dirs
+    for path, subdirs, fns in os.walk(root):
+        if len(subdirs) == 0:
+            all_dirs.append(path)
+    return all_dirs
 
 class TargetFileExistsError(Exception): pass
 class ChildOutputFolderError(Exception): pass
@@ -80,19 +86,86 @@ import traceback
 
 from string import Formatter
 #ACR-000-XXX/IRM_recherche.../Axial_T2_FLAIR/  par exemple.
-BIDS_PATTERN = op.join('{PatientID}', '{StudyID}{_TimePoint}',
-                       '{SeriesDescription}_{SeriesNumber}',
+BIDS_PATTERN = op.join('{PatientID}', '{StudyID}{_TimePoint}_{StudyDate}',
+                       '{SeriesNumber}_{SeriesDescription}',
                        '{PatientID}{_TimePoint}_{SeriesDescription}_{InstanceNumber}_{ContentTime}.dcm')
 
-def dcm_tagged_export(dcm_path, output_folder, output_pattern=BIDS_PATTERN,
-                      file_operation_func=shutil.copy, time_point=None):
-    if op.isfile(dcm_path):
-        dcm_fns = [dcm_path]
-    else:
-        if Path(dcm_path) in Path(output_folder).parents:
-            raise ChildOutputFolderError()
-        logger.info('List all files recursively in %s...', dcm_path)
-        dcm_fns = list_files(dcm_path)
+
+DCMNIIX_BASE_PATTERN = 'sub-{patient_ID}/ses-{study_ID}{_TimePoint}_{StudyDate}/{data_type}/{series_number}_sub-{patient_ID}{_TimePoint}_{description}'
+
+DCMNIIX_MAIN_PATTERN = DCMNIIX_BASE_PATTERN + '_{bids_suffix}.nii'
+
+DCMNIIX_ME_MC_PATTERN = DCMNIIX_BASE_PATTERN + '_echo-{echo_number}_coil-{coil}_{bids_suffix}.nii' 
+
+export_rules = {
+    '(.*field_map.*)' : { 
+        'bids_type' : 'fmap',
+        'dcmniix_pattern' : DCMNIIX_MAIN_PATTERN
+        },
+    '(.*MPRAGE.*)|(.*FLAIR.*)|(.*SWI.*)|(.*_T2_.*)|(.*_vessels_.*)|(.*_tof_.*)|(.*_pd_.*)' : {
+        'bids_type' : 'anat',
+        'dcmniix_pattern' : DCMNIIX_MAIN_PATTERN
+    },
+    '(.*SWI.*OPT1.*)' : {
+        'bids_type' : 'anat',
+        'dcmniix_pattern' : DCMNIIX_ME_MC_PATTERN
+    },
+    '(.*BOLD.*)' : {
+        'bids_type' : 'func',
+        'dcmniix_pattern' : DCMNIIX_MAIN_PATTERN
+    },
+    '(.*DIFF.*)' : {
+        'bids_type' : 'dwi',
+        'dcmniix_pattern' : DCMNIIX_MAIN_PATTERN
+    },   
+    '(.*pcasl.*)' : {
+        'bids_type' : 'perf',
+        'dcmniix_pattern' : DCMNIIX_MAIN_PATTERN
+    },
+}
+
+bids_suffix = {
+    '(.*SWI.*OPT1.*)' : 'MEGRE',
+    '(.*SWI.*)' : 'SWI',
+    '(.*_T2_.*)' : 'T2w',
+    '(.*FLAIR.*)' : 'FLAIR',
+    '(.*MPRAGE.*)' : 'T1w',
+    '(.*BOLD.*)' : 'T2starw',
+    '(.*_diff_.*)' : 'DWI',
+    '.*T1w.*' : 'T1w',
+    '.*_pd_.*' : 'PDw',
+    '.*MT.*' : 'MTR',
+    '(.*vessels.*)|(.*tof.*)' : 'angio'
+}
+
+dcmniix_tags = {
+    'coil' : '%a',
+    'basename' : '%b',
+    'comments' : '%c',
+    'description' : '%d',
+    'echo_number' : '%e',
+    'folder_name' : '%f',
+    'patient_ID' : '%i',
+    'series_instance_UID' : '%j',
+    'study_instance_UID' : '%k',
+    'manufacturer' : '%m',
+    'patient_name' : '%n',
+    'protocol' : '%p',
+    'instance_number' : '%r',
+    'series_number' : '%s',
+    'time' : '%t',
+    'acquisition_number' : '%u',
+    'vendor' : '%v',
+    'study_ID' : '%x',
+    'sequence_name' : '%z',
+}
+
+def dcm_tagged_export(dcm_pathes, output_folder, time_point=None):
+
+    logger.info('List files...')
+    dcm_dirs = []
+    for dcm_path in dcm_pathes:
+        list_leaf_dirs(dcm_path, dcm_dirs=dcm_dirs)
 
     file_operations = dict()
     logger.info('Resolve file operations...')
@@ -145,6 +218,8 @@ def read_dcm_header(fn, required_fields, defer_size='1 KB'):
         v = dcm.__getattr__(a)
         if a == 'InstanceNumber':
             v = '%05d' % v
+        if a == 'SeriesNumber':
+            v = '%03d' % v
         h[a] = v
     return h
 
@@ -165,10 +240,11 @@ class TestDcmRenaming(unittest.TestCase):
         ds = dcmread(dcm_fn)
         self.subject_id = 'test_subject'
         self.protocol = 'test_procotol'
-        self.acq_type = 'FLAIR [1]'
+        self.acq_type = 'FLAIR [A]'
         self.volume_index = 2
-        self.series_index = '4'
+        self.series_index = 4
         self.volume_time = '1234'
+        self.acq_date = '20221014'
 
         ds.PatientID = self.subject_id
         ds.StudyID = self.protocol
@@ -176,6 +252,7 @@ class TestDcmRenaming(unittest.TestCase):
         ds.InstanceNumber = self.volume_index
         ds.SeriesNumber = self.series_index
         ds.ContentTime = self.volume_time
+        ds.StudyDate = self.acq_date
 
         self.dcm_fn_s1 = op.join(self.tmp_data_dir, 'MR_FLAIR_s1.dcm')
         ds.save_as(self.dcm_fn_s1)
@@ -187,6 +264,7 @@ class TestDcmRenaming(unittest.TestCase):
         ds.InstanceNumber = 1
         ds.SeriesNumber = '1'
         ds.ContentTime = '1234'
+        ds.StudyDate = '20210107'
         ds.save_as(self.dcm_fn_s2_flair_1)
 
         self.dcm_fn_s2_flair_2 = op.join(self.tmp_data_dir, 'MR_FLAIR_s2_2.dcm')
@@ -196,10 +274,11 @@ class TestDcmRenaming(unittest.TestCase):
         ds.InstanceNumber = 2
         ds.SeriesNumber = '1'
         ds.ContentTime = '1235'
+        ds.StudyDate = '20210107'
         ds.save_as(self.dcm_fn_s2_flair_2)
 
         self.dcm_fn_s2_flair_2bis = op.join(self.tmp_data_dir,
-                                            'MR_FLAIR_s2_2b.dcm')
+                                            'MR_FLAIR_s	2_2b.dcm')
         ds.save_as(self.dcm_fn_s2_flair_2bis)
 
     def tearDown(self):
@@ -207,20 +286,22 @@ class TestDcmRenaming(unittest.TestCase):
         shutil.rmtree(self.tmp_output_dir)
  
     def test_tagged_fn(self):
-        expected_fn = op.join(self.tmp_data_dir, self.subject_id, self.protocol,
-                              '%s_%s' % ('FLAIR_1', self.series_index),
+        expected_fn = op.join(self.tmp_data_dir, self.subject_id, 
+                              '%s_%s' % (self.protocol, self.acq_date),
+                              '%03d_%s' % (self.series_index, 'FLAIR_A'),
                               '%s_%s_%05d_%s.dcm' % (self.subject_id,
-                                                'FLAIR_1',
+                                                'FLAIR_A',
                                                 self.volume_index,
                                                 self.volume_time))
         output_fn = dcm_tagged_fn(self.dcm_fn_s1, self.tmp_data_dir)
         self.assertEqual(output_fn, expected_fn)
 
     def test_tagged_fn_with_time_point(self):
-        expected_fn = op.join(self.tmp_data_dir, self.subject_id, '%s_T0' % self.protocol,
-                              '%s_%s' % ('FLAIR_1', self.series_index),
+        expected_fn = op.join(self.tmp_data_dir, self.subject_id, 
+                              '%s_T0_%s' % (self.protocol, self.acq_date),
+                              '%03d_%s' % (self.series_index, 'FLAIR_A'),
                               '%s_T0_%s_%05d_%s.dcm' % (self.subject_id,
-                                                     'FLAIR_1',
+                                                     'FLAIR_A',
                                                      self.volume_index,
                                                      self.volume_time))
         output_fn = dcm_tagged_fn(self.dcm_fn_s1, self.tmp_data_dir, time_point='T0')
@@ -229,12 +310,12 @@ class TestDcmRenaming(unittest.TestCase):
     def test_export_copy_single_file(self):
         dcm_tagged_export(self.dcm_fn_s1, self.tmp_output_dir)
         expected_fn = op.join(self.tmp_output_dir, self.subject_id,
-                              self.protocol,
-                              '%s_%s' % ('FLAIR_1', self.series_index),
+                              '%s_%s' % (self.protocol, self.acq_date),
+                              '%03d_%s' % (self.series_index, 'FLAIR_A'),
                               '%s_%s_%05d_%s.dcm' % (self.subject_id,
-                                                'FLAIR_1',
-                                                self.volume_index,
-                                                self.volume_time))
+                                                     'FLAIR_A',
+                                                     self.volume_index,
+                                                     self.volume_time))
         self.assertTrue(op.exists(expected_fn))
         self.assertTrue(op.exists(self.dcm_fn_s1))
 
@@ -242,22 +323,22 @@ class TestDcmRenaming(unittest.TestCase):
         dcm_tagged_export(self.dcm_fn_s1, self.tmp_output_dir,
                           file_operation_func=shutil.move)
         expected_fn = op.join(self.tmp_output_dir, self.subject_id,
-                              self.protocol,
-                              '%s_%s' % ('FLAIR_1', self.series_index),
+                              '%s_%s' % (self.protocol, self.acq_date),
+                              '%03d_%s' % (self.series_index, 'FLAIR_A'),
                               '%s_%s_%05d_%s.dcm' % (self.subject_id,
-                                                'FLAIR_1',
+                                                'FLAIR_A',
                                                 self.volume_index,
                                                 self.volume_time))
         self.assertTrue(op.exists(expected_fn))
         self.assertFalse(op.exists(self.dcm_fn_s1))
         
 
-    def test_export_folder(self):
-        pass
-
     def test_duplicate_target(self):
         self.assertRaises(TargetFileExistsError, dcm_tagged_export,
                           self.tmp_data_dir, self.tmp_output_dir)
+
+    def test_export_folder(self):
+        raise NotImplementedError()
 
     def test_nested_dest_folder(self):
         dest_dir = op.join(self.tmp_data_dir, 'export')
@@ -267,7 +348,7 @@ class TestDcmRenaming(unittest.TestCase):
 
 
     def test_export_from_archive(self):
-        raise NotImplementedError
+        raise NotImplementedError()
 
     def test_export_from_archive_no_move(self):
-        raise NotImplementedError
+        raise NotImplementedError()
