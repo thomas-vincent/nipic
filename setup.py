@@ -3,6 +3,10 @@
 import sys
 import os
 import os.path as op
+
+import sys
+sys.path.insert(1,os.path.abspath('/home/lesca/Software/TGVQSM-master/deps'))
+
 from glob import glob
 from setuptools import setup, find_packages
 import subprocess
@@ -65,13 +69,15 @@ setup(name='nipic', version=version['__version__'],
       keywords='neuromaging mri segmentation freesurfer angiopathic lesions',
       packages=find_packages(exclude=['test']),
       python_requires='>=3',
-      install_requires=['nibabel', 'matplotlib', 'scikit-image'],
+      install_requires=['nibabel', 'matplotlib', 'scikit-image', 'pyvista'],
       extras_require={},
       entry_points={
           'console_scripts': [
               'tag_angio_lesions = nipic.commands.tag_angio_lesions:main',
               'auto_angio_lesions = nipic.commands.auto_angio_lesions:main',
               'fs_lut_dict = nipic.commands.fs_lut_dict:main',
-              'dcm_export_to_nii = nipic.commands.dcm_export_to_nii:main'
+              'fs_seg_stats = nipic.commands.fs_stats_to_table:main',
+              'dcm_export_to_nii = nipic.commands.dcm_export_to_nii:main',
+              'mri_snap = nipic.commands.mri_snap:main'
           ],
       })

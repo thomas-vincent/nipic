@@ -6,6 +6,8 @@ import tempfile
 import unittest
 import logging
 
+import re
+
 import nibabel as nib
 import numpy as np
 import matplotlib.pyplot as plt
@@ -40,6 +42,12 @@ CUBE_CORNERS = np.array([
     ], dtype=float)
 
 
+MEASURE_RE = re.compile('^# Measure .*$', flags=re.MULTILINE)
+STATS_TABLE_RE = re.compile(r'^(# ColHeaders.*\n(?:.+\n)+)', flags=re.MULTILINE)
+
+import io
+import pandas as pd
+
 class Freesurfer:
 
     def __init__(self, fs_home=None, subject_dir=None):
@@ -60,6 +68,76 @@ class Freesurfer:
         logger.debug('FS subjects dir: %s', self.subjects_dir)
 
         self.tmp_dir = tempfile.mkdtemp()
+
+
+    def stat_seg_to_df(self, subject, segmentation_label='aseg', 
+                       struct_names=None, struct_stats=None,
+                       measure_labels=None):
+
+        stat_fn = self.stats_fn(subject, segmentation_label + '.stats')
+        with open(stat_fn) as fin:
+            content = fin.read()
+        
+        def safe_unit_suffix(u):
+            if u == 'unitless':
+                return ''
+            su = '_' + u.replace('^', '',).replace(' ', '')
+            assert(su.isidentifier())
+            return su
+
+        measures = pd.DataFrame({'subject' : [subject]})
+        for measure_line in MEASURE_RE.findall(content):
+            # # Measure BrainSeg, BrainSegVol, Brain Segmentation Volume, 1109112.000000, mm^3
+            _, ml, ll, m, mu = [e.strip() for e in measure_line.replace('# Measure ', '').split(',')]
+            if 'Number' in ll:
+                m = int(m)
+            else:
+                m = float(m)
+            if measures is None or ml in measure_labels:
+                measures[ml + safe_unit_suffix(mu)] = m
+                
+            if ml == 'eTIV':
+                eTIV = m
+        measures.set_index('subject', inplace=True)
+
+        stats_table_str = STATS_TABLE_RE.findall(content)[0].replace('# ColHeaders', '')
+        lines = stats_table_str.split('\n')
+        header = lines[0].strip().split(' ')
+        stats = pd.read_csv(io.StringIO('\n'.join(lines[1:])), header=None,
+                            delim_whitespace=True)
+        stats.columns = header
+        stats.drop(columns=['Index', 'SegId'], inplace=True)
+
+        
+        for col in stats.columns:
+            if col != 'StructName':
+                stats[col + '-to-eTIV'] = stats[col] / eTIV
+        
+        if struct_stats is not None:
+            stats = stats[['StructName'] + struct_stats]
+
+        if struct_names is not None:
+            stats = stats[stats['StructName'].isin(struct_names)]
+
+        stats = stats.set_index('StructName').stack().to_frame()
+        stats.index = ['_'.join(col) for col in stats.index.values]
+        
+        
+            
+        
+        stats = stats.T
+        stats['subject'] = [subject]
+        stats.set_index('subject', inplace=True)
+   
+
+        return pd.concat((measures, stats), axis=1)
+            
+
+    def stat_seg_measure_global(self, measure_label, subject_names=None, segmentation_label='aseg'):
+        pass
+        
+    def stat_seg_measure_regional(self, measure_label, struct_names=None, subject_names=None, segmentation_label='aseg'):
+        pass
 
     def auto_angio_lesions(self, subject_name, save_figures=False):
         # load WM mask
@@ -279,6 +357,18 @@ class Freesurfer:
         return op.join(ensure_dir_exists(op.join(self.subject_dir(subject_name),
                                                  'image')),
                        image_bfn)
+
+    def stats_fn(self, subject_name, stats_bfn):
+        return op.join(ensure_dir_exists(op.join(self.subject_dir(subject_name),
+                                                 'stats')),
+                       stats_bfn)
+                       
+    def subjects(self):
+        subjects = []
+        for subfolder in os.listdir(self.subjects_dir):
+            if op.exists(op.join(self.subjects_dir, subfolder, 'touch')):
+                subjects.append(subfolder)
+        return subjects
 
     def subject_dir(self, subject_name):
         return check_file_exists(op.join(self.subjects_dir, subject_name))
@@ -502,4 +592,47 @@ def set_axes_equal(ax):
     ax.set_xlim3d([x_middle - plot_radius, x_middle + plot_radius])
     ax.set_ylim3d([y_middle - plot_radius, y_middle + plot_radius])
     ax.set_zlim3d([z_middle - plot_radius, z_middle + plot_radius])
+
+
+import nipype.interfaces.io as nio
+import nipype.pipeline as nppl
+import nipype.interfaces.utility as nut
+import nipype.interfaces.base as nifbase
+
+class ReconAllInputSpec(nifbase.TraitedSpec):
+    t1_fn = nifbase.File(desc="phase", exists=True,
+                         mandatory=True, argstr='-i %s')
+    flair_fn = nifbase.File(desc="magnitude", exists=True,
+                            mandatory=True, argstr='-FLAIR %s')
+    fs_subject = nifbase.Str(desc="fs_subject", mandatory=True, 
+                             argstr='-s %s')
+
+
+{"ASEG": "{subject_id}/mri/aseg*gz",
+"RIBBON": "{subject_id}/mri/ribbon.mgz",
+"ANNOT_LH": "{subject_id}/label/lh.aparc.annot",
+"ANNOT_RH": "{subject_id}/label/rh.aparc.annot",
+"WHITE_LH": "{subject_id}/surf/lh.white",
+"WHITE_RH": "{subject_id}/surf/rh.white",
+"PIAL_LH": "{subject_id}/surf/lh.pial",
+"PIAL_RH": "{subject_id}/surf/rh.pial",
+"subject_id": "{subject_id}"}
+class ReconAllOutputSpec(nifbase.TraitedSpec):
+    aseg =  nifbase.File(desc='aseg', exists=True)  
+
+class ReconAllInterface(nifbase.Interface):
+    input_spec = ReconAllInputSpec
+    output_spec = ReconAllOutputSpec
+    _cmd = 'recon-all -all -parallel -FLAIRpial'
+
+    def _list_outputs(self):
+        outputs = self.output_spec().get()
+        fs = Freesurfer()
+        for output_name in list(outputs.keys()):
+            outputs['aseg'] = fs.image_fn(self.inputs.fs_subject, output_name)
+        return outputs
+
+    def _run_interface(self, runtime):
+        super(ReconAllInterface, self)._run_interface(runtime)
+
 
