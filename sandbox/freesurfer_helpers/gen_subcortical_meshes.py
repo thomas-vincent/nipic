@@ -125,10 +125,12 @@ def main():
                                 'of subject %s...', label, subject)
                     tmp_aseg_filled_fn = op.join(tmp_dir,
                                                  'aseg_%s_filled.mgz' % slabel)
+                    norm_fn = op.join(subject_dir, 'mri', 'norm.mgz')
+                    if not op.exists(norm_fn):
+                        norm_fn = op.join(subject_dir, 'mri', 'brain.mgz')
                     fs_cmd = [op.join(fs_home, 'bin', 'mri_pretess'),
                               op.join(subject_dir, 'mri', 'aseg.mgz'),
-                              slabel,
-                              op.join(subject_dir, 'mri', 'norm.mgz'),
+                              slabel, norm_fn,
                               tmp_aseg_filled_fn]
                     logger.debug('Freesurfer command: %s', ' '.join(fs_cmd))
                     assert call(fs_cmd)==0
@@ -223,7 +225,7 @@ def write_annot_and_stats(subject_dir, label_mask, stat_names=None,
     for stat_name in stat_names:
         stat_texture = np.zeros(label_mask.shape)
         for label in labels:
-            stat_value = stats[stat_names][np.where(stats['SegId']==label)]
+            stat_value = stats[stat_name][np.where(stats['SegId']==label)]
             stat_texture[np.where(label_mask==label)] = stat_value    
 
         if write_extras:
@@ -232,7 +234,7 @@ def write_annot_and_stats(subject_dir, label_mask, stat_names=None,
             write_func_gii(stat_texture, stat_gii_fn)
 
         stat_fs_fn = op.join(subject_dir, 'surf', 'aseg.%s' %stat_name)
-        logger.info('Writing func data (freesurfer format) to %s ...', stat_fs_fn)
+        logger.info('Writing stat data (freesurfer format) to %s ...', stat_fs_fn)
         nibabel.freesurfer.write_morph_data(stat_fs_fn, stat_texture)
 
 def write_func_gii(func_data, out_fn, intent=None):
@@ -266,7 +268,7 @@ def read_stats(stats_fn):
         content = re.sub('# *ColHeaders *', '', content)
         content = re.sub(' +', ' ', content)
         
-    stats = np.genfromtxt(StringIO(unicode(content)), delimiter=' ',
+    stats = np.genfromtxt(StringIO(str(content)), delimiter=' ',
                           names=True, dtype=None)
     return stats
 

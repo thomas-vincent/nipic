@@ -20,7 +20,7 @@ def main():
     parser.add_option('-s', '--subjects', metavar='LIST_OF_STR',
                       type='str', 
                       help='Comma-separated list of subjects.')
-                      
+
     parser.add_option('-t', '--stats', metavar='LIST_OF_STR',
                       type='str', 
                       help='Comma-separated list of stats.')
@@ -32,11 +32,11 @@ def main():
     parser.add_option('-m', '--measures', metavar='LIST_OF_STR',
                       type='str',
                       help='Comma-separated list of measure labels')
-    
+
     parser.add_option('-o', '--output-file', type='str',
                       metavar='PATH',
                       help='Output files to save table')
-    
+
     parser.add_option('-v', '--verbose', dest='verbose',
                       metavar='VERBOSELEVEL',
                       type='int', default=0, help='Verbose level')
@@ -49,15 +49,14 @@ def main():
     if nba < min_args or (max_args >= 0 and nba > max_args):
         parser.print_help()
         sys.exit(1)
-        
-        
+
     freesurfer = Freesurfer()
     if options.subjects is not None:
         subjects = options.subjects
     else:
         subjects = freesurfer.subjects()
-    logger.info('Subjects: %s', subjects)  
-    
+    logger.info('Subjects: %s', subjects)
+
     def safe_split(s, split_on):
         if s is None:
             return None
@@ -68,7 +67,7 @@ def main():
                                            measure_labels=safe_split(options.measures, ','))
                  for s in subjects]
                  
-    stats = pd.concat(to_concat, axis=0, join='outer')
+    stats = pd.concat((e for e in to_concat if e is not None), axis=0, join='outer')
     # from IPython import embed; embed()
     
     if options.output_file is not None:

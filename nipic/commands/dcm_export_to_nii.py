@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import sys
 import os.path as op
+from pathlib import Path
 import logging
 from optparse import OptionParser
 import unittest
@@ -59,7 +60,7 @@ def main():
     input_dcm_pathes = args[:-1]
     dcm_export_to_nii(input_dcm_pathes, output_bids_path, time_point=options.time_point)
 
-            
+
 def list_leaf_dirs(root, all_dirs=None):
     all_dirs = [] if all_dirs is None else all_dirs
     for path, subdirs, fns in os.walk(root):
@@ -75,6 +76,8 @@ import traceback
 
 from string import Formatter
 
+import pandas as pd
+
 BIDS_PATTERN = op.join('{PatientID}', '{StudyID}{TimePoint}_{StudyDate}',
                        '{SeriesNumber}_{SeriesDescription}',
                        '{PatientID}_{TimePoint}_{SeriesDescription}_{InstanceNumber}_{ContentTime}.dcm')
@@ -87,34 +90,38 @@ DCMNIIX_ME_PATTERN = DCMNIIX_BASE_PATTERN + '_echo-{echo_number}_{bids_suffix}'
 DCMNIIX_ME_MC_PATTERN = DCMNIIX_BASE_PATTERN + '_run-1_echo-{echo_number}_coil-{coil}_{bids_suffix}' 
 
 export_rules = {
-    '(.*t2_gre_3d_field_map.*)|(.*B1Map.*)': { 
-        'bids_type' : 'fmap',
-        'dcm2niix_pattern' : DCMNIIX_ME_PATTERN
-    },
-    '.*field_map.*' : { 
-        'bids_type' : 'fmap',
-        'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
-        },
-    '(.*SWI.*OPT1.*)' : {
+    # '(.*t2_gre_3d_field_map.*)|(.*B1Map.*)': { 
+        # 'bids_type' : 'fmap',
+        # 'dcm2niix_pattern' : DCMNIIX_ME_PATTERN
+    # },
+    # '.*field_map.*' : { 
+        # 'bids_type' : 'fmap',
+        # 'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
+        # },
+    # '(.*SWI.*OPT1.*)' : {
+        # 'bids_type' : 'anat',
+        # 'dcm2niix_pattern' : DCMNIIX_ME_MC_PATTERN
+    # },
+    '(.*MPRAGE.*)|(.*FLAIR.*)' : {
         'bids_type' : 'anat',
-        'dcm2niix_pattern' : DCMNIIX_ME_MC_PATTERN
-    },
-    '(.*MPRAGE.*)|(.*FLAIR.*)|(.*SWI.*)|(.*_T2_.*)|(.*_vessels_.*)|(.*_tof_.*)|(.*_pd_.*)|(.*MT.*)|(.*T1w.*)|(.*tof.*)' : {
-        'bids_type' : 'anat',
         'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
     },
-    '(.*BOLD.*)' : {
-        'bids_type' : 'func',
-        'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
-    },
-    '(.*DIFF.*)' : {
-        'bids_type' : 'dwi',
-        'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
-    },   
-    '(.*pcasl.*)' : {
-        'bids_type' : 'perf',
-        'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
-    },
+    # '(.*MPRAGE.*)|(.*FLAIR.*)|(.*SWI.*)|(.*_T2_.*)|(.*_vessels_.*)|(.*_tof_.*)|(.*_pd_.*)|(.*MT.*)|(.*T1w.*)|(.*tof.*)' : {
+        # 'bids_type' : 'anat',
+        # 'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
+    # },
+    # '(.*BOLD.*)' : {
+        # 'bids_type' : 'func',
+        # 'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
+    # },
+    # '(.*DIFF.*)' : {
+        # 'bids_type' : 'dwi',
+        # 'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
+    # },   
+    # '(.*pcasl.*)' : {
+        # 'bids_type' : 'perf',
+        # 'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
+    # },
     'Localizer_Brain.*' : None,
     'MoCoSeries' : None,
     'PhoenixZIPReport' : None,
@@ -197,7 +204,10 @@ class ExportInfo:
         self.reload_table()
 
     def already_done(self, dcm_dir):
-        dcm_fn = op.join(dcm_dir, os.listdir(dcm_dir)[0])
+        listing = os.listdir(dcm_dir)
+        if len(listing) == 0:
+            return True
+        dcm_fn = op.join(dcm_dir, listing[0])
         dh = read_dcm_header(dcm_fn, 
                              required_fields=['SeriesInstanceUID', 'StudyDate', 
                                               'SeriesDescription', 'PatientID'])
@@ -272,14 +282,283 @@ def fix_mag_tag(fn):
        return  fixed_mag_cfn + '.nii'
    return fn
 
+
+
+
+def get_series_dirs(ds, series_link_root_dir):
+    series_pathes = []
+    series_link_root = Path(series_link_root_dir)
+    root_dir = Path(ds.filename).resolve().parent
+    for patient in ds.patient_records:
+        print(
+            f"PATIENT: PatientID={patient.PatientID}, "
+            f"PatientName={patient.PatientName}"
+        )
+
+        # Find all the STUDY records for the patient
+        studies = [
+            ii for ii in patient.children if ii.DirectoryRecordType == "STUDY"
+        ]
+        for study in studies:
+            study_descr = study.StudyDescription or "(no value available)"
+            print(
+                f"{'  ' * 1}STUDY: StudyID={study.StudyID}, "
+                f"StudyDate={study.StudyDate}, StudyDescription={study_descr}"
+            )
+
+            # Find all the SERIES records in the study
+            all_series = [
+                ii for ii in study.children if ii.DirectoryRecordType == "SERIES"
+            ]
+            for series in all_series:
+                series_descr = getattr(series, "SeriesDescription", "NA")
+
+                images = [ii for ii in series.children
+                          if ii.DirectoryRecordType == "IMAGE"]
+
+                print(f"{'  ' * 2}SERIES: SeriesNumber={series.SeriesNumber}, "
+                      f"Modality={series.Modality}, SeriesDescription={series_descr} - "
+                      f"{len(images)} SOP Instance(s)")
+               
+                if series.Modality == 'MR':
+                    series_dir = series_link_root / series.SeriesInstanceUID
+                    series_dir.mkdir()
+                    # Get the absolute file path to each instance
+                    #   Each IMAGE contains a relative file path to the root directory
+                    elems = [ii["ReferencedFileID"] for ii in images]
+                    # Make sure the relative file path is always a list of str
+                    paths = [[ee.value] if ee.VM == 1 else ee.value for ee in elems]
+                    paths = [Path(*p) for p in paths]
+                    for p in paths:
+                        (series_dir / p.name).symlink_to(Path(root_dir) / p)
+                    series_pathes.append(series_dir)                    
+    return series_pathes
+
+
+from datetime import datetime
+
+def get_studies_info(ds):
+    studies_info = []
+    dfmt = '%Y%m%d%H%M%S'
+    root_dir = Path(ds.filename).resolve().parent
+    for patient in ds.patient_records:
+        print(
+            f"PATIENT: PatientID={patient.PatientID}, "
+            f"PatientName={patient.PatientName}"
+        )
+
+        # Find all the STUDY records for the patient
+        studies = [
+            ii for ii in patient.children if ii.DirectoryRecordType == "STUDY"
+        ]
+        for study in studies:
+            study_descr = study.StudyDescription or "(no value available)"
+            print(
+                f"{'  ' * 1}STUDY: StudyID={study.StudyID}, "
+                f"StudyDate={study.StudyDate}, StudyDescription={study_descr}"
+            )
+
+            # Find all the SERIES records in the study
+            all_series = [
+                ii for ii in study.children if ii.DirectoryRecordType == "SERIES"
+            ]
+            ts_start = datetime.now()
+            ts_end = datetime.fromtimestamp(0)
+            for series in all_series:
+                series_descr = getattr(
+                                series, "SeriesDescription", "(no value available)"
+                            )
+                
+                images = [
+                    ii for ii in series.children
+                    if ii.DirectoryRecordType == "IMAGE"
+                ]
+
+                print(
+                    f"{'  ' * 2}SERIES: SeriesNumber={series.SeriesNumber}, "
+                    f"Modality={series.Modality}, SeriesDescription={series_descr} - "
+                    f"{len(images)} SOP Instance(s)"
+                )
+                # Get the absolute file path to each instance
+                #   Each IMAGE contains a relative file path to the root directory
+                elems = [ii["ReferencedFileID"] for ii in images]
+                # Make sure the relative file path is always a list of str
+                paths = [[ee.value] if ee.VM == 1 else ee.value for ee in elems]
+                paths = [Path(*p) for p in paths]
+
+                # List the instance file paths
+                for p in paths:
+                    
+
+                    # Optionally read the corresponding SOP Instance
+                    h = dcmread(Path(root_dir) / p, stop_before_pixels=True, defer_size='1 Kb')
+                    # print(f"{'  ' * 3}IMAGE: Path={os.fspath(p)} - {h.AcquisitionDateTime}")
+                    try:
+                        ts = datetime.strptime(h.AcquisitionDateTime.split('.')[0], dfmt)
+                        ts_start = min(ts_start, ts)
+                        ts_end = max(ts_end, ts)
+                    except AttributeError:
+                        logger.error('Could not get AcquisitionDateTime for %s', os.fspath(p))
+
+                    
+            print(
+                f"{'  ' * 1}STUDY: StudyID={study.StudyID}, "
+                f"StudyDate={study.StudyDate}, StudyDescription={study_descr} - "
+                f"StartDate={ts_start}, EndDate={ts_end} - "
+                f"Duration={ts_end - ts_start}"
+            )   
+            studies_info.append((patient.PatientID, study.StudyDate, study.StudyTime, {'start_time' : ts_start, 'end_time' : ts_end}))
+    return studies_info
+
+
+
+def add_series(root, series_fns):
+    series_info = set()
+    for path, subdirs, rfns in os.walk(root):
+        logger.info('Resolve series in %s', op.join(path))
+        for rfn in rfns:
+            fn = op.join(path, rfn)
+            try:
+                h = read_dcm_header(fn, 
+                                    required_fields=['StudyID', 'StudyDate',
+                                                     'SeriesInstanceUID', 'PatientID'],
+                                    allow_missing_field=True)
+            except InvalidDicomError:
+                logger.info('Could not read DCM file %s', rfn)
+                continue
+            if 'SeriesInstanceUID' in h:
+                series_fns[h['SeriesInstanceUID']].add(fn)
+                series_info.add((h['StudyDate'], h['PatientID']))
+    logger.info('Resolved visits: %s', '\n'.join('%s %s' % e for e in sorted(series_info, key=lambda e: e[0])))
+
+def group_series(series_fn, series_link_root_dir):
+    series_link_root = Path(series_link_root_dir)
+    series_dirs = []
+    for suid, fns in series_fn.items():
+        series_dir = op.join(series_link_root_dir, suid)
+        if not op.exists(series_dir):
+            os.makedirs(series_dir)
+            series_dirs.append(series_dir)
+        logger.info('Create %d DCM links in %s', len(fns), series_dir)
+        for fn in fns:
+            bfn = op.basename(fn)
+            src_fn = os.path.abspath(fn)
+            dest_fn = op.join(series_dir, bfn)
+            logger.debug('Create sym link %s -> %s ', src_fn, dest_fn)
+            try:
+                Path(dest_fn).symlink_to(Path(src_fn))
+            except:
+                logger.error('Sym link failed. Series ignored')
+                series_dirs.pop()
+                break
+    return series_dirs
+
+def parse_series_info(series_dcm_path):
+    series_dcm_path = Path(series_dcm_path)
+    logger.info('Parse series info in %s', series_dcm_path)
+    dcm_fns = os.listdir(series_dcm_path)
+    if len(dcm_fns) == 0:
+        return None
+    ts_start = datetime.now()
+    ts_end = datetime.fromtimestamp(0)
+    date_fmt = '%Y%m%d%H%M%S'
+    sizes = set()
+ 
+    for dcm_fn in dcm_fns:
+        h = read_dcm_header(series_dcm_path / dcm_fn, 
+                            required_fields=['StudyID', 'StudyDate',
+                                             'SeriesInstanceUID', 
+                                             'SeriesDescription', 
+                                             'PatientID', 'AcquisitionDate',
+                                             'AcquisitionDateTime', 'RepetitionTime',
+                                             'AcquisitionTime', 'Rows', 'Columns', 
+                                             'NumberOfFrames'],
+                            allow_missing_field=True)
+        if 'AcquisitionDateTime' in h:
+            adate = h['AcquisitionDateTime'].split('.')[0]
+        elif 'AcquisitionDate' in h and 'AcquisitionTime' in h:
+            adate = h['AcquisitionDate']+h['AcquisitionTime'].split('.')[0]
+        else:
+            logger.warning('Could not retrieve acquisition time from %s in series %s', dcm_fn, h['SeriesDescription'])
+            adate = None
+        
+        if adate is not None:
+            ts = datetime.strptime(adate, date_fmt)
+            ts_start = min(ts_start, ts)
+            ts_end = max(ts_end, ts)
+        if 'Rows' in h and 'Columns' in h:
+            if 'NumberOfFrames' in h:
+                sizes.add(f'{h["NumberOfFrames"]}fx{h["Rows"]}x{h["Columns"]}')
+            else:
+                sizes.add(f'?fx{h["Rows"]}x{h["Columns"]}')
+        else:
+            logger.warning('Could not retrieve Rows / Columns from %s in series %s', dcm_fn, h['SeriesDescription'])
+
+    if ts_start == ts_end and 'RepetitionTime' in h:
+        ts_end = ts_start + pd.Timedelta(h['RepetitionTime'] * len(dcm_fns), unit="ms")
+
+    return {
+        **h, 
+        **{
+            'Timestamp_First_Image' : ts_start,
+            'Timestamp_Last_Image' : ts_end,
+            'Nb_Instances' : len(dcm_fns),
+            'Instance_Size' : ', '.join(sizes)
+        }
+    }
+
+
+
+def get_series_uid(series_dcm_path):
+    series_dcm_path = Path(series_dcm_path)
+    dcm_fns = os.listdir(series_dcm_path)
+    if len(dcm_fns) == 0:
+        return None
+    h = read_dcm_header(series_dcm_path / dcm_fns[0], 
+                        required_fields=['SeriesInstanceUID'])
+    return h['SeriesInstanceUID']
+
+manifest_columns = ['SeriesInstanceUID', 'PatientID', 
+                    'StudyDate', 'SeriesDescription', 
+                    'Timestamp_First_Image', 'Timestamp_Last_Image',
+                    'Nb_Instances', 'Instance_Size']
+def update_manifest(series_dirs, manifest_fn):
+    if not op.exists(manifest_fn):
+        manifest_df = pd.DataFrame(columns=manifest_columns)
+        manifest_df.to_excel(manifest_fn)
+        
+    manifest_df = pd.read_excel(manifest_fn, engine='openpyxl')
+    manifest_df.set_index('SeriesInstanceUID', inplace=True)
+       
+    series_recorded = set(manifest_df.index)
+    to_concat = [manifest_df]
+    for series_path in series_dirs:
+        series_uid = get_series_uid(series_path)
+        if series_uid is not None and series_uid not in series_recorded:
+            try:
+                series_info = parse_series_info(series_path)
+            except InvalidDicomError:
+                logger.error('Error reading DICOM in %s (skipped)', series_path)
+                continue
+            if series_info is not None:
+                to_concat.append(pd.DataFrame.from_records([series_info])[manifest_columns]
+                                .set_index('SeriesInstanceUID'))
+    manifest_df = pd.concat(to_concat)
+    manifest_df.reset_index().to_excel(manifest_fn, index=False)
+
 def dcm_export_to_nii(dcm_pathes, output_folder, time_point=None, 
                       project_name=None, force=False):
 
     logger.info('List directories...')
-    dcm_dirs = []
+    series_fns = defaultdict(set)
+    info_studies = []
+    series_tmp_dir = tempfile.mkdtemp()
+    logger.debug('Temporary series dir: %s', series_tmp_dir)
     for dcm_path in dcm_pathes:
-        list_leaf_dirs(dcm_path, all_dirs=dcm_dirs)
+        add_series(dcm_path, series_fns)
+    series_dirs = group_series(series_fns, series_tmp_dir)
 
+    update_manifest(series_dirs, op.join(output_folder, 'manifest.xlsx'))
 
     dataset_description_fn = op.join(output_folder, 'dataset_description.json')
     if not op.exists(dataset_description_fn):
@@ -288,32 +567,19 @@ def dcm_export_to_nii(dcm_pathes, output_folder, time_point=None,
                                    lambda fn: fn.lower().endswith('dcm'))
              h = read_dcm_header(dcm_fn, required_fields=['StudyID'])
              project_name = h['StudyID']
- 
+
         with open(dataset_description_fn, 'w') as fout:
-                  json.dump({'Name' : project_name, 
+                  json.dump({'Name' : project_name,
                              'BIDSVersion' : BIDSVersion}, fout)
 
     export_info = ExportInfo(op.join(output_folder, 'export_info.json'))
     file_operations = dict()
     logger.info('Resolve file operations...')
-    for dcm_dir in tqdm(dcm_dirs):
-
-        if dcm_dir.endswith('DICOMDIR'):
-            logger.info('Ignore %s', dcm_dir)
-            continue
-        try:
-            if export_info.already_done(dcm_dir) and not force:
-                logger.info('Skip %s', dcm_dir)
-                continue
-        except InvalidDicomError:
-            logger.error('Error reading DICOM in %s (skipped)', dcm_dir)
-            continue
-
-        dcm2niix_file_pattern = make_dcm2niix_file_pattern(dcm_dir,
-                                                           time_point=time_point)
+    for dcm_dir in tqdm(series_dirs):
+        dcm2niix_file_pattern = make_dcm2niix_file_pattern(dcm_dir)
         if dcm2niix_file_pattern is not None:
-            cmd = ['dcm2niix', '-v', '0', 
-                   '-f', dcm2niix_file_pattern, '-o', 
+            cmd = ['dcm2niix', '-v', '0',
+                   '-f', dcm2niix_file_pattern, '-o',
                    output_folder, dcm_dir]
             cmd_str = ' '.join(cmd)
             logger.debug('Running: %s', cmd_str)
@@ -327,10 +593,10 @@ def dcm_export_to_nii(dcm_pathes, output_folder, time_point=None,
                     dcm_output_fns = check_dcm_outputs(cmd_output)
                 except Dcm2niixMissingImageError:
                     dcm_fn = op.join(dcm_dir, os.listdir(dcm_dir)[0])
-                    dh = read_dcm_header(dcm_fn, 
+                    dh = read_dcm_header(dcm_fn,
                                          required_fields=['StudyDate',
-                                                          'SeriesInstanceUID', 
-                                                          'SeriesDescription', 
+                                                          'SeriesInstanceUID',
+                                                          'SeriesDescription',
                                                           'PatientID'])
                     logger.error(('Missing image(s) for {PatientID} / '
                                   '{StudyDate} / {SeriesDescription} / '
@@ -348,16 +614,16 @@ def dcm_export_to_nii(dcm_pathes, output_folder, time_point=None,
                                                    merge_headers_echo_times)
                 except Exception as e:
                     dcm_fn = op.join(dcm_dir, os.listdir(dcm_dir)[0])
-                    dh = read_dcm_header(dcm_fn, 
+                    dh = read_dcm_header(dcm_fn,
                                          required_fields=['StudyDate',
-                                                          'SeriesInstanceUID', 
-                                                          'SeriesDescription', 
+                                                          'SeriesInstanceUID',
+                                                          'SeriesDescription',
                                                           'PatientID'])
                     dh['exception'] = repr(e)
                     logger.error(('Error while concatenating over echo times for {PatientID} / '
                                   '{StudyDate} / {SeriesDescription} / '
                                   '{SeriesInstanceUID}\n{exception}').format(**dh))
-                    continue    
+                    continue
                 def get_coil_index(coil_match):
                     c = coil_match['coil']
                     if c.isdigit():
@@ -383,9 +649,10 @@ def dcm_export_to_nii(dcm_pathes, output_folder, time_point=None,
                                   '{StudyDate} / {SeriesDescription} / '
                                   '{SeriesInstanceUID}\n{exception}').format(**dh))
                     continue
-                    
+
                 output_fns = [fix_mag_tag(fn) for fn in output_fns]
                 export_info.register_dcm_export(dcm_dir, output_fns)
+    shutil.rmtree(series_tmp_dir)
 
 from string import ascii_lowercase
 from heapq import heappush
@@ -547,11 +814,11 @@ def fix_stacked_coils(output_fns):
                     shutil.move(json_fn, fixed_json_fn)
                     fixed_outputs.append(fixed_hc_fn)
                 else:
-                    fixed_outputs.append(output_fn)               
+                    fixed_outputs.append(output_fn)
         else:
             fixed_outputs.append(output_fn)
     return fixed_outputs
-            
+
 class Dcm2niixMissingImageError(Exception): pass
 
 def check_dcm_outputs(dcm2niix_output):
@@ -659,13 +926,22 @@ def make_dcm2niix_file_pattern(dcm_acq_path, time_point=None):
     logger.debug('dcm2niix ouput filename: %s', dcm2niix_output_fn)
     return dcm2niix_output_fn
 
-def read_dcm_header(fn, required_fields, defer_size='1 KB'):
+def read_dcm_header(fn, required_fields, defer_size='1 KB', allow_missing_field=False):
     # logger.debug('Read header from %s', fn)
     dcm = dcmread(fn, stop_before_pixels=True, defer_size=defer_size)
     #from IPython import embed; embed()
     h = {}
     for a in required_fields:
-        v = dcm.__getattr__(a)
+        try:
+            v = dcm.__getattr__(a)
+        except AttributeError:
+            
+            if allow_missing_field:
+                logger.debug('Field %s not found in header of %s', a, fn)
+                continue
+            else:
+                logger.error('Field %s not found in header of %s', a, fn)
+                raise
         if a == 'InstanceNumber':
             v = '%05d' % v
         if a == 'SeriesNumber':

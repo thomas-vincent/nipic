@@ -4,7 +4,6 @@ import sys
 import os
 import os.path as op
 
-import sys
 sys.path.insert(1,os.path.abspath('/home/lesca/Software/TGVQSM-master/deps'))
 
 from glob import glob
@@ -77,6 +76,7 @@ setup(name='nipic', version=version['__version__'],
               'auto_angio_lesions = nipic.commands.auto_angio_lesions:main',
               'fs_lut_dict = nipic.commands.fs_lut_dict:main',
               'fs_seg_stats = nipic.commands.fs_stats_to_table:main',
+              'fs_recon_review = nipic.commands.fs_recon_review:main',
               'dcm_export_to_nii = nipic.commands.dcm_export_to_nii:main',
               'mri_snap = nipic.commands.mri_snap:main'
           ],

@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import unittest
 import logging
+import subprocess
 
 import re
 
@@ -75,9 +76,12 @@ class Freesurfer:
                        measure_labels=None):
 
         stat_fn = self.stats_fn(subject, segmentation_label + '.stats')
+        if not op.exists(stat_fn):
+            logger.error('No stat file found for %s: %s', subject,  stat_fn)
+            return None
         with open(stat_fn) as fin:
             content = fin.read()
-        
+
         def safe_unit_suffix(u):
             if u == 'unitless':
                 return ''
@@ -353,6 +357,10 @@ class Freesurfer:
         return op.join(self.subject_dir(subject_name), 'mri',
                        volume_bfn)
 
+    def surface_fn(self, subject_name, surface_bfn):
+        return op.join(self.subject_dir(subject_name), 'surf',
+                       surface_bfn)
+
     def image_fn(self, subject_name, image_bfn):
         return op.join(ensure_dir_exists(op.join(self.subject_dir(subject_name),
                                                  'image')),
@@ -362,11 +370,12 @@ class Freesurfer:
         return op.join(ensure_dir_exists(op.join(self.subject_dir(subject_name),
                                                  'stats')),
                        stats_bfn)
-                       
+
     def subjects(self):
         subjects = []
         for subfolder in os.listdir(self.subjects_dir):
-            if op.exists(op.join(self.subjects_dir, subfolder, 'touch')):
+            if (subfolder != 'fsaverage' and 
+                op.exists(op.join(self.subjects_dir, subfolder, 'surf', 'lh.pial'))):
                 subjects.append(subfolder)
         return subjects
 
@@ -600,15 +609,15 @@ import nipype.interfaces.utility as nut
 import nipype.interfaces.base as nifbase
 
 class ReconAllInputSpec(nifbase.TraitedSpec):
-    t1_fn = nifbase.File(desc="phase", exists=True,
+    t1_fn = nifbase.File(desc="T1", exists=True,
                          mandatory=True, argstr='-i %s')
-    flair_fn = nifbase.File(desc="magnitude", exists=True,
+    flair_fn = nifbase.File(desc="FLAIR", exists=True,
                             mandatory=True, argstr='-FLAIR %s')
     fs_subject = nifbase.Str(desc="fs_subject", mandatory=True, 
                              argstr='-s %s')
 
 
-{"ASEG": "{subject_id}/mri/aseg*gz",
+recon_outputs = {"ASEG" : ('mri', 'aseg.mgz'),
 "RIBBON": "{subject_id}/mri/ribbon.mgz",
 "ANNOT_LH": "{subject_id}/label/lh.aparc.annot",
 "ANNOT_RH": "{subject_id}/label/rh.aparc.annot",
@@ -619,7 +628,7 @@ class ReconAllInputSpec(nifbase.TraitedSpec):
 "subject_id": "{subject_id}"}
 class ReconAllOutputSpec(nifbase.TraitedSpec):
     aseg =  nifbase.File(desc='aseg', exists=True)  
-
+    
 class ReconAllInterface(nifbase.Interface):
     input_spec = ReconAllInputSpec
     output_spec = ReconAllOutputSpec
