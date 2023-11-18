@@ -1,4 +1,5 @@
 import sys
+import os.path as op
 import logging
 from optparse import OptionParser
 import subprocess
@@ -21,15 +22,31 @@ VOLUMES = [
     },
     {
         'fn' : '{root}/mri/wm.mgz',
-        'p_0' : ['name={subject}_wm.mgz'],
-        'p_1' : ['name={subject}_wm.mgz'],
+        'p_0' : ['name={subject}_wm.mgz',
+                 'colormap=Jet', 'colorscale=2,3',
+                 'opacity=0.3'],
+        'p_1' : ['name={subject}_wm.mgz',
+                 'colormap=PET', 'colorscale=2,3',
+                 'opacity=0.3'],
     },
     {
         'fn' : '{root}/mri/brainmask.mgz',
-        'p_0' : ['name={subject}_brainmask.mgz'],
-        'p_1' : ['name={subject}_brainmask.mgz'],
+        'p_0' : ['name={subject}_brainmask.mgz',
+                 'colormap=Jet', 'colorscale=2,3',
+                 'opacity=0.3'],
+        'p_1' : ['name={subject}_brainmask.mgz',
+                 'colormap=PET', 'colorscale=2,3',
+                 'opacity=0.3'],
     }
 ]
+
+CONTROL_POINTS = [
+    {
+        'fn' : '{root}/tmp/Fix_notes.json',
+        'p_0' : ['name={subject}_Fix_notes'],
+    }
+]
+
 
 SURFACES = [
     {
@@ -62,6 +79,20 @@ SURFACES = [
     }
 ]
 
+empty_fix_notes = \
+"""{
+    "color": [
+        255,
+        255,
+        0
+    ],
+    "data_type": "fs_pointset",
+    "points": [
+    ],
+    "version": 1,
+    "vox2ras": "scanner_ras"
+}"""
+
 def main():
 
     min_args = 1
@@ -87,7 +118,13 @@ def main():
 
     freesurfer = Freesurfer()
     subjects = [(arg, freesurfer.subject_dir(arg)) for arg in args[:2]]
-    cmd = (['freeview'] +
+
+    fix_notes_fn = freesurfer.tmp_fn(subjects[0][0], 'Fix_notes.json')
+    if not op.exists(fix_notes_fn):
+        with open(fix_notes_fn, 'w') as fout:
+            fout.write(empty_fix_notes)
+
+    cmd = (['freeview', '-hide-3d-slices'] +
            ['-v'] + list(chain(*[[':'.join([v['fn'].format(root=sroot)] +
                                            [s.format(root=sroot, subject=subj) for s in
                                             v.get('p_%d' % isubj, [])])
@@ -97,7 +134,12 @@ def main():
                                            [s.format(root=sroot, subject=subj) for s in
                                             v.get('p_%d' % isubj, [])])
                                   for v in SURFACES]
-                                 for isubj, (subj, sroot) in enumerate(subjects)]))
+                                 for isubj, (subj, sroot) in enumerate(subjects)])) +
+           ['-c'] + list(chain(*[[':'.join([c['fn'].format(root=sroot)] +
+                                           [s.format(root=sroot, subject=subj) for s in
+                                            c.get('p_%d' % isubj, [])])
+                                  for c in CONTROL_POINTS]
+                                 for isubj, (subj, sroot) in enumerate(subjects[:1])]))
     )
     logger.debug('Command: %s', cmd)
     subprocess.run(cmd)

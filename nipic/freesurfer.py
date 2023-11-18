@@ -357,6 +357,10 @@ class Freesurfer:
         return op.join(self.subject_dir(subject_name), 'mri',
                        volume_bfn)
 
+    def tmp_fn(self, subject_name, tmp_bfn):
+        return op.join(self.subject_dir(subject_name), 'tmp',
+                       tmp_bfn)
+
     def surface_fn(self, subject_name, surface_bfn):
         return op.join(self.subject_dir(subject_name), 'surf',
                        surface_bfn)
