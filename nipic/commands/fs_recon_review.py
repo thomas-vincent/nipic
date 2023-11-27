@@ -1,4 +1,5 @@
 import sys
+import os
 import os.path as op
 import logging
 from optparse import OptionParser
@@ -39,6 +40,18 @@ VOLUMES = [
                  'opacity=0.3'],
     }
 ]
+
+FINAL_SURF_ORIG_FN = '{root}/mri/brain.finalsurfs.mgz'
+FINAL_SURF_EDIT = {
+        'fn' : '{root}/mri/brain.finalsurfs.manedit.mgz',
+        'p_0' : ['name={subject}_finalsurfs_edit',
+                 'colormap=Jet', 'colorscale=2,3',
+                 'opacity=0.3'],
+        'p_1' : ['name={subject}_finalsurfs_edit',
+                 'colormap=PET', 'colorscale=2,3',
+                 'opacity=0.3'],
+    }
+
 
 CONTROL_POINTS = [
     {
@@ -107,6 +120,11 @@ def main():
                       metavar='VERBOSELEVEL',
                       type='int', default=0, help='Verbose level')
 
+    parser.add_option('-c', '--cerebellum', dest='cerebellum',
+                      action='store_true', default=False,
+                      help=('Insure brain.finalsurfs.manedit.mgz exists and load it. '
+                            'Used for fixing pial surface extending into cerebellum'))
+
     (options, args) = parser.parse_args()
 
     logger.setLevel(options.verbose)
@@ -124,11 +142,20 @@ def main():
         with open(fix_notes_fn, 'w') as fout:
             fout.write(empty_fix_notes)
 
-    cmd = (['freeview', '-hide-3d-slices'] +
+    volumes = VOLUMES
+    if options.cerebellum:
+        for isubj, (subj, sroot) in enumerate(subjects):
+            fs_edit_fn = FINAL_SURF_EDIT['fn'].format(root=sroot)
+            if not op.exists(fs_edit_fn):
+                fs_orig_fn = FINAL_SURF_ORIG_FN.format(root=sroot)
+                os.copy(fs_orig_fn, fs_edit_fn)
+        volumes += [FINAL_SURF_EDIT]
+
+    cmd = (['freeview', '--hide-3d-slices', '--neurological-view'] +
            ['-v'] + list(chain(*[[':'.join([v['fn'].format(root=sroot)] +
                                            [s.format(root=sroot, subject=subj) for s in
                                             v.get('p_%d' % isubj, [])])
-                                  for v in VOLUMES]
+                                  for v in volumes]
                                  for isubj, (subj, sroot) in enumerate(subjects)])) +
            ['-f'] + list(chain(*[[':'.join([v['fn'].format(root=sroot)] +
                                            [s.format(root=sroot, subject=subj) for s in
