@@ -167,7 +167,7 @@ class Freesurfer:
         # also remove plexus coroid
         not_cerebrum = np.any((aseg==46, aseg==47, aseg==7, aseg==8,
                                aseg==16, aseg==6, aseg==44, aseg==24,
-                               aseg==31, aseg==63),
+                               aseg==31, aseg==63, aseg==5),
                               axis=0)
         wm[np.where(not_cerebrum)] = False
         wm_mask = np.where(wm)
@@ -192,6 +192,46 @@ class Freesurfer:
         # t1_gm = t1[gm_mask]
         t1_vtc = t1[vtc_mask]
 
+        ## Extract White Matter Hyperintensities
+
+        flair_raw_img = nib.load(self.mri_fn(subject_name, 'FLAIR_reg_to_orig.mgz'))
+        flair_raw = flair_raw_img.get_fdata()
+        wm_no_subcortical_gm = wm.copy()
+        subcortical_gm = np.any((aseg==11, aseg==50, # caudate
+                                 aseg==12, aseg==51, # putamen
+                                 aseg==13, aseg==52, # pallidium
+                                 aseg==10, aseg==49, # thalamus
+                                 aseg==26, aseg==58, # Accumbens
+                                 aseg==17, aseg==53, # Hypocampus
+                                 aseg==18, aseg==54, # Amydgala
+                                 aseg==28, aseg==60, # ventral DC
+        ), axis=0)
+        wm_no_subcortical_gm[np.where(subcortical_gm)] = 0
+        wm_noscgm_fn = self.mri_fn(subject_name, 'wm_no_subcortical_gm.mgz')
+        save_img_with_new_dtype(wm_no_subcortical_gm, aseg_img, wm_noscgm_fn)
+        logger.info('Segmentation of white matter withou subcortical structures saved to %s',
+                    wm_noscgm_fn)
+
+        wmh = wm_no_subcortical_gm.copy()
+        # Load SAMSEG's WMH PPM
+        samseg_wmh_ppm_fn = self.samseg_fn(subject_name, op.join('posteriors', 'WM-hypointensities.mgz'))
+        samseg_wmh_ppm_img = nib.load(samseg_wmh_ppm_fn)
+        samseg_wmh_ppm = samseg_wmh_ppm_img.get_fdata()
+        samseg_ppm_threshold = 0.1
+        wmh = np.zeros_like(aseg)
+        wmh[np.where(samseg_wmh_ppm >= samseg_ppm_threshold)] = 77
+
+        wmh[np.where(np.bitwise_not(wm_no_subcortical_gm))] = 0
+        flair_raw_wm = flair_raw[wm_no_subcortical_gm]
+        wmh[np.where(np.bitwise_and(wmh==77, flair_raw <= (np.median(flair_raw_wm)+np.std(flair_raw_wm))))] = 99
+        from IPython import embed; embed()
+
+        # TODO clean up isolated voxels
+
+        wmh_fn = self.mri_fn(subject_name, 'WMH.mgz')
+        save_img_with_new_dtype(wmh, aseg_img, wmh_fn)
+
+        ## Extract Lacunes and PVS
         flair_hypo_thresh_pct = 99
         flair_hypo_thresh = np.percentile(flair_vtc, flair_hypo_thresh_pct)
         print('flair_hypo_thresh=', flair_hypo_thresh)
@@ -357,6 +397,10 @@ class Freesurfer:
         return op.join(self.subject_dir(subject_name), 'mri',
                        volume_bfn)
 
+    def samseg_fn(self, subject_name, volume_bfn):
+        return op.join(self.subject_dir(subject_name), 'mri', 'samseg',
+                       volume_bfn)
+
     def tmp_fn(self, subject_name, tmp_bfn):
         return op.join(self.subject_dir(subject_name), 'tmp',
                        tmp_bfn)
@@ -393,8 +437,7 @@ class Freesurfer:
             input_seg_fn = self.mri_fn(subject_name, fs_aseg_bfn)
             tmp_seg_fn = op.join(self.tmp_dir, 'vol_S16.nii')
 
-            # TODO: keep only WMH from aseg then apply distance criterion
-            #       to dispatch into VWMH and DWMH
+            # TODO: 
             #       Apply multimodal intensity thresholds to segment lesions
             # detect_angio_lesions(input_seg_fn, output_lesion_seg_fn)
             # be sure to save as S16 so that conversion is no longer needed

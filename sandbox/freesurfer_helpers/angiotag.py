@@ -3,13 +3,9 @@
 
 fs_angio_lut = {
     15000 : {
-        'name' : 'DWMH',
+        'name' : 'WMH',
         'color' : [200, 70, 255, 0]
     },
-    15001 : {
-        'name' : 'VWMH',
-        'color' : [200, 70, 255, 0]
-    }, 
     15002 : {
         'name' : 'small_infarct',
         'color' : [200, 70, 255, 0]
