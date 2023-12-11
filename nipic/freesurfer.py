@@ -21,7 +21,7 @@ pv.global_theme.transparent_background = True
 
 from scipy import ndimage as ndi
 from scipy.spatial.distance import pdist
-import nipic.angio_lesions as al
+import nipic.csvd as svd
 
 logging.basicConfig()
 logger = logging.getLogger('nipic')
@@ -48,6 +48,20 @@ STATS_TABLE_RE = re.compile(r'^(# ColHeaders.*\n(?:.+\n)+)', flags=re.MULTILINE)
 
 import io
 import pandas as pd
+
+def get_subjects_dir(fs_home=None):
+    home = (fs_home if fs_home is not None
+            else os.getenv('FREESURFER_HOME'))
+    if len(home) == 0:
+        raise Exception('FREESURFER_HOME env variable not found. ' \
+                        'Make sure to source SetUpFreeSurfer.sh or '\
+                        'check freesurfer installation.')
+    subjects_dir = os.getenv('SUBJECTS_DIR')
+    if subjects_dir is None or len(subjects_dir) == 0:
+        raise Exception('SUBJECTS_DIR env variable not defined. ' \
+                        'Make sure to source SetUpFreeSurfer.sh or '\
+                        'check freesurfer installation.')
+    return subjects_dir
 
 class Freesurfer:
 
@@ -194,6 +208,10 @@ class Freesurfer:
 
         ## Extract White Matter Hyperintensities
 
+        t1_raw_img = nib.load(self.mri_fn(subject_name, 'orig.mgz'))
+        t1_raw = t1_img.get_fdata()
+
+
         flair_raw_img = nib.load(self.mri_fn(subject_name, 'FLAIR_reg_to_orig.mgz'))
         flair_raw = flair_raw_img.get_fdata()
         wm_no_subcortical_gm = wm.copy()
@@ -212,21 +230,40 @@ class Freesurfer:
         logger.info('Segmentation of white matter withou subcortical structures saved to %s',
                     wm_noscgm_fn)
 
-        wmh = wm_no_subcortical_gm.copy()
         # Load SAMSEG's WMH PPM
-        samseg_wmh_ppm_fn = self.samseg_fn(subject_name, op.join('posteriors', 'WM-hypointensities.mgz'))
+        samseg_wmh_ppm_fn = self.samseg_fn(subject_name,
+                                           op.join('posteriors',
+                                                   'WM-hypointensities.mgz'))
         samseg_wmh_ppm_img = nib.load(samseg_wmh_ppm_fn)
         samseg_wmh_ppm = samseg_wmh_ppm_img.get_fdata()
-        samseg_ppm_threshold = 0.1
         wmh = np.zeros_like(aseg)
-        wmh[np.where(samseg_wmh_ppm >= samseg_ppm_threshold)] = 77
-
-        wmh[np.where(np.bitwise_not(wm_no_subcortical_gm))] = 0
-        flair_raw_wm = flair_raw[wm_no_subcortical_gm]
-        wmh[np.where(np.bitwise_and(wmh==77, flair_raw <= (np.median(flair_raw_wm)+np.std(flair_raw_wm))))] = 99
+        wmh[np.where(samseg_wmh_ppm >= svd.WMH_SAMSEG_PPM_THRESHOLD)] = svd.WMH
         from IPython import embed; embed()
 
-        # TODO clean up isolated voxels
+        flair_raw_wm = flair_raw[wm_no_subcortical_gm]
+        flair_wmh_thresh = np.median(flair_raw_wm) + np.std(flair_raw_wm)
+        wmh[np.where(np.bitwise_and(wmh==svd.WMH,
+                                    flair_raw <= flair_wmh_thresh))] = svd.WMH_SAMSEG_FP
+
+        if 0:
+            t1_raw_wm = t1_raw[wm_no_subcortical_gm]
+            t1_wmh_thresh = np.median(t1_raw_wm) - 0.5 * np.std(flair_raw_wm)
+            flair_wmh_thresh = np.median(flair_raw_wm) +  np.std(flair_raw_wm)
+            # from IPython import embed; embed()
+
+            missed_wmh = np.bitwise_and(wmh == 0,
+                                        np.bitwise_and(t1_raw < t1_wmh_thresh,
+                                                       flair_raw > flair_wmh_thresh))
+            wmh[np.where(missed_wmh)] = 498
+
+        wmh[np.where(np.bitwise_not(wm_no_subcortical_gm))] = 0
+
+        if 0:
+            # Clean up isolated voxels
+            for c_lab, c_loc in enumerate(ndi.find_objects(wmh==svd.WMH)):
+                m_cluster = np.where(wmh == c_lab+1)
+                if len(m_cluster[0]) < svd.WMH_MIN_CLUSTER_SIZE:
+                    wmh[m_cluster] = 0
 
         wmh_fn = self.mri_fn(subject_name, 'WMH.mgz')
         save_img_with_new_dtype(wmh, aseg_img, wmh_fn)
@@ -305,25 +342,25 @@ class Freesurfer:
                     smooth_object_from_label(cluster, voxel_size)
 
                 tag = ''
-                if (cluster_surf.max_diameter >= al.LACUNE_MIN_LENGTH_MM and
-                    cluster_surf.length <= al.LACUNE_MAX_LENGTH_MM and
-                    cluster_surf.isoperimeter_quotient > al.LACUNE_MIN_ISOPQ):
+                if (cluster_surf.max_diameter >= svd.LACUNE_MIN_LENGTH_MM and
+                    cluster_surf.length <= svd.LACUNE_MAX_LENGTH_MM and
+                    cluster_surf.isoperimeter_quotient > svd.LACUNE_MIN_ISOPQ):
                     lacunes[m_cluster] = True
                     tag = '_lacune_'
-                elif (cluster_surf.isoperimeter_quotient >= al.PVS_MIN_ISOPQ and
-                      cluster_surf.isoperimeter_quotient < al.PVS_MAX_ISOPQ):
+                elif (cluster_surf.isoperimeter_quotient >= svd.PVS_MIN_ISOPQ and
+                      cluster_surf.isoperimeter_quotient < svd.PVS_MAX_ISOPQ):
                     pvs[m_cluster] = True
                     tag = '_pvs_'
                 else:
                     tag = '_filtered_'
-                    if cluster_surf.isoperimeter_quotient >= al.LACUNE_MIN_ISOPQ:
-                        if cluster_surf.max_diameter < al.LACUNE_MIN_LENGTH_MM:
+                    if cluster_surf.isoperimeter_quotient >= svd.LACUNE_MIN_ISOPQ:
+                        if cluster_surf.max_diameter < svd.LACUNE_MIN_LENGTH_MM:
                             tag += ('_lacune_too_small_%1.2f%s' %
                                     (cluster_surf.max_diameter, unit))
-                        elif cluster_surf.length > al.LACUNE_MAX_LENGTH_MM:
+                        elif cluster_surf.length > svd.LACUNE_MAX_LENGTH_MM:
                             tag += ('_lacune_too_big_%1.2f%s' %
                                     (cluster_surf.length, unit))
-                    elif cluster_surf.isoperimeter_quotient < al.PVS_MIN_ISOPQ:
+                    elif cluster_surf.isoperimeter_quotient < svd.PVS_MIN_ISOPQ:
                         tag += '_unfit_shape_'
 
                 image_fn = self.image_fn(subject_name,
@@ -341,13 +378,13 @@ class Freesurfer:
                     pl.show(screenshot=image_fn)
 
         lp_seg = np.zeros_like(aseg)
-        lp_seg[np.where(lacunes)] = al.LACUNE
-        lp_seg[np.where(pvs)] = al.PV_SPACE
+        lp_seg[np.where(lacunes)] = svd.LACUNE
+        lp_seg[np.where(pvs)] = svd.PV_SPACE
         lp_seg_out_fn = self.mri_fn(subject_name, 'aseg_lp.mgz')
         save_img_with_new_dtype(lp_seg, aseg_img, lp_seg_out_fn)
 
-        aseg[np.where(lacunes)] = al.LACUNE
-        aseg[np.where(pvs)] = al.PV_SPACE
+        aseg[np.where(lacunes)] = svd.LACUNE
+        aseg[np.where(pvs)] = svd.PV_SPACE
         aseg_out_fn = self.mri_fn(subject_name, 'aseg_angiol.mgz')
         save_img_with_new_dtype(aseg, aseg_img, aseg_out_fn)
 
@@ -372,7 +409,7 @@ class Freesurfer:
     def clean(self):
         shutil.rmtree(self.tmp_dir)
 
-    def load_lut(self, add_angio_lesions=True):
+    def load_lut(self, add_csvd=True):
         lut_fn = op.join(self.home, 'FreeSurferColorLUT.txt')
         if not op.exists(lut_fn):
             raise Exception('Standard FS LUT file not found: %s' % lut_fn)
@@ -389,8 +426,8 @@ class Freesurfer:
                                                   int(toks[4]),
                                                   int(toks[5])]}
 
-        if add_angio_lesions:
-            lut.update(al.fs_angio_lut)
+        if add_csvd:
+            lut.update(svd.fs_csvd_lut)
         return lut
 
     def mri_fn(self, subject_name, volume_bfn):

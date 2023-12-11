@@ -3,7 +3,7 @@ import logging
 from optparse import OptionParser
 
 from nipic.freesurfer import Freesurfer
-from nipic.angio_lesions import fs_angio_lut
+from nipic.csvd import create_csvd_workflow
 
 logger = logging.getLogger('nipic')
 
@@ -28,8 +28,14 @@ def main():
                            '20 (INFO), '\
                            '10 (DEBUG)')
 
+    parser.add_option('-s', '--fs_subjects_dir',
+                      help="Path to Freesurfer's subject directory")
+
     parser.add_option('-g', '--save-figures', action='store_true', default=False,
                       help='Save histograms')
+
+    parser.add_option('-n', '--nb_threads', default=1, type='int',
+                      help='Number of threads for parallel processing')
 
     (options, args) = parser.parse_args()
     logger.setLevel(options.verbose)
@@ -39,10 +45,11 @@ def main():
         parser.print_help()
         return 1
 
-    subject_name = args[0]
+    subject_id = args[0]
 
-    freesurfer = Freesurfer()
-    freesurfer.auto_angio_lesions(subject_name,
-                                  save_figures=options.save_figures)
+    csvd_workflow = create_csvd_workflow(options.fs_subjects_dir)
+    csvd_workflow.input_node.subject_id = subject_id
+    csvd_workflow.input_node.save_figure = options.save_figures
+    csvd_workflow.input_node.nb_threads = options.nb_threads
+    csvd_workflow.run()
 
-    

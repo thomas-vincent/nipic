@@ -72,9 +72,9 @@ setup(name='nipic', version=version['__version__'],
       extras_require={},
       entry_points={
           'console_scripts': [
-              'tag_angio_lesions = nipic.commands.tag_angio_lesions:main',
-              'auto_angio_lesions = nipic.commands.auto_angio_lesions:main',
-              'fs_lut_dict = nipic.commands.fs_lut_dict:main',
+              'tag_csvd = nipic.commands.tag_angio_lesions:main',
+              'segment_csvd = nipic.commands.segment_csvd:main',
+              'fs_lut = nipic.commands.fs_lut:main',
               'fs_seg_stats = nipic.commands.fs_stats_to_table:main',
               'fs_recon_review = nipic.commands.fs_recon_review:main',
               'dcm_export_to_nii = nipic.commands.dcm_export_to_nii:main',

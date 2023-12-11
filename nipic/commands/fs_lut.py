@@ -3,6 +3,7 @@ import logging
 from optparse import OptionParser
 
 from nipic.freesurfer import Freesurfer
+from nipic.csvd import fs_csvd_lut
 
 logger = logging.getLogger('nipic')
 
@@ -34,6 +35,9 @@ def main():
         parser.print_help()
         return 1
 
-    freesurfer = Freesurfer()
-    # convert aseg.img to aseg.arg (volume image to set of drawable rois)
-    pprint(freesurfer.load_lut())
+    lines = []
+    for idx, tissue in Freesurfer().load_lut(add_csvd=True).items():
+        name = tissue['name']
+        r, g, b, a = tissue['color']
+        lines.append(f'{idx}\t{name}\t{r}\t{g}\t{b}\t{a}')
+    print('\n'.join(lines))
