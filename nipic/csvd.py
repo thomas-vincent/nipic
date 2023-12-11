@@ -1,16 +1,15 @@
 from subprocess import run
 
 from nipype.interfaces.base import isdefined
-from nipype.interfaces.utility import Function
+from nipype.interfaces.utility import Function, IdentityInterface
 import nipype.pipeline.engine as pe
-from nipype.interfaces.io import FreeSurferSource
 from nipype.interfaces.freesurfer import MRICoreg, ApplyVolTransform
 
 import nipic.freesurfer as fs
 
+import logging
 logging.basicConfig()
 logger = logging.getLogger('nipic')
-
 
 WMH = 15000
 WMH_SAMSEG_FP = 15001
@@ -27,7 +26,7 @@ fs_csvd_lut = {
     WMH_SAMSEG_FP : {
         'name' : 'WMH_samseg_FP',
         'color' : [255, 100, 100, 0]
-    }, 
+    },
     SMALL_INFARCT : {
         'name' : 'small_infarct',
         'color' : [200, 70, 255, 0]
@@ -60,7 +59,7 @@ def check_dependencies():
     # Freesurfer
     if run(['freesurfer']).returncode != 0:
         url = 'https://surfer.nmr.mgh.harvard.edu/fswiki/DownloadAndInstall'
-        raise Exception(f'Freesurfer not found. See {url}')
+        raise Exception("Freesurfer not found. See %s" % url)
 
     if run(['samseg', '--help']).returncode != 0:
         raise Exception('SAMSEG not available. Maybe Freesurfer is too old?')
@@ -73,18 +72,18 @@ def create_csvd_workflow(subjects_dir=None):
                        else fs.get_subjects_dir())
     logger.info("Freesurfer's SUBJECTS_DIR: %s", fs_subjects_dir)
 
-    workflow = ...
-    input_node = ...
+    workflow = pe.Workflow(name='nipic_CSVD')
+    input_node = pe.Node(IdentityInterface(fields=['subjects_dir', 'nb_threads']),
+                         name='inputspec')
 
-    # Coregister raw FLAIR on original T1 
+    # Coregister raw FLAIR on original T1
 
-    freesurfer = FreesurferOutput(subjects_dir=subjects_dir)
-    workflow.connect(input_node, 'subject_id', freesurfer, 'subject_id')
-    
     coreg = MRICoreg()
     #mri_coreg --mov FLAIRraw.mgz --ref orig.mgz --reg FLAIR_to_T1.lta
 
     def _coreg_input(subjects_dir, subject_id):
+        from glob import glob
+        import os.path as op
         subject_mri_dir = op.join(subjects_dir, subject_id, 'mri')
         orig_fn = glob(op.join(subject_mri_dir, 'orig.*'))[0]
         flair_fn = glob(op.join(subject_mri_dir, 'orig', 'FLAIRraw.*'))[0]
@@ -96,11 +95,13 @@ def create_csvd_workflow(subjects_dir=None):
                           name='coreg_FLAIRraw_to_T1')
     workflow.connect(coreg_input, 'FLAIRraw', coreg, 'source_file')
     workflow.connect(coreg_input, 'T1_orig', coreg, 'reference_file')
-    
+
     #mri_vol2vol --mov  FLAIRraw.mgz  --reg FLAIR_to_T1.lta  --o FLAIR_reg.mgz --targ orig.mgz
     apply_coreg = ApplyVolTransform()
 
     def _apply_coreg_output(subjects_dir, subject_id):
+        from glob import glob
+        import os.path as op
         ext = op.splitext(glob(op.join(subject_mri_dir, 'orig.*'))[0])[-1]
         return op.join(subjects_dir, subject_id, 'mri', 'FLAIRraw_to_orig' + ext)
 
@@ -112,10 +113,10 @@ def create_csvd_workflow(subjects_dir=None):
     workflow.connect(coreg_input, 'FLAIRraw', apply_coreg, 'source_file')
     workflow.connect(coreg_input, 'T1_orig', apply_coreg, 'target_file')
     workflow.connect(coreg, 'out_reg_file', apply_coreg, 'reg_file')
-    workflow.connect(apply_coreg_ouput, 'FLAIRraw_reg_to_orig', apply_coreg, 'transformed_file')
+    workflow.connect(apply_coreg_output, 'FLAIRraw_reg_to_orig', apply_coreg, 'transformed_file')
 
 
-    # Run SAMSEG on FLAIR and T1 
+    # Run SAMSEG on FLAIR and T1
 
     # run_samseg --input 001.mgz FLAIR_reg.mgz --pallidum-separate --save-posteriors --threads 8 --output ../samseg/
 
