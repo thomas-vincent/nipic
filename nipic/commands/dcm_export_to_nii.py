@@ -58,7 +58,7 @@ def main():
 
     output_bids_path = args[-1]
     input_dcm_pathes = args[:-1]
-    dcm_export_to_nii(input_dcm_pathes, output_bids_path, time_point=options.time_point)
+    dcm_export_to_nii(input_dcm_pathes, output_bids_path)
 
 
 def list_leaf_dirs(root, all_dirs=None):
@@ -558,7 +558,7 @@ def dcm_export_to_nii(dcm_pathes, output_folder, time_point=None,
         add_series(dcm_path, series_fns)
     series_dirs = group_series(series_fns, series_tmp_dir)
 
-    update_manifest(series_dirs, op.join(output_folder, 'manifest.xlsx'))
+    update_manifest(series_dirs, op.join(output_folder, 'series_info.xlsx'))
 
     dataset_description_fn = op.join(output_folder, 'dataset_description.json')
     if not op.exists(dataset_description_fn):
@@ -871,7 +871,7 @@ def fix_single_coil_fn(fn):
 # Largest suffix matching a BIDS subject tag
 BIDS_SUBJECT_TAG_RE = re.compile('^.*?(?P<pid>[a-zA-Z0-9]+)$')
 
-def make_dcm2niix_file_pattern(dcm_acq_path, time_point=None):
+def make_dcm2niix_file_pattern(dcm_acq_path):
     dcm_fn = op.join(dcm_acq_path, os.listdir(dcm_acq_path)[0])
     tags = read_dcm_header(dcm_fn, 
                           required_fields=['StudyDate', 'SeriesDescription',
@@ -889,7 +889,6 @@ def make_dcm2niix_file_pattern(dcm_acq_path, time_point=None):
                                        .replace('-', ''))
 
     tags.update(dcm2niix_tags)
-    tags['TimePoint'] = '%s' % time_point if time_point is not None else ''
 
     dcm2niix_pat, bids_type = None, None
     for fn_re, rule in export_rules.items():
@@ -1020,17 +1019,6 @@ class TestDcmRenaming(unittest.TestCase):
                                                 self.volume_index,
                                                 self.volume_time))
         output_fn = dcm_tagged_fn(self.dcm_fn_s1, self.tmp_data_dir)
-        self.assertEqual(output_fn, expected_fn)
-
-    def test_tagged_fn_with_time_point(self):
-        expected_fn = op.join(self.tmp_data_dir, self.subject_id, 
-                              '%s_T0_%s' % (self.protocol, self.acq_date),
-                              '%03d_%s' % (self.series_index, 'FLAIR_A'),
-                              '%s_T0_%s_%05d_%s.dcm' % (self.subject_id,
-                                                     'FLAIR_A',
-                                                     self.volume_index,
-                                                     self.volume_time))
-        output_fn = dcm_tagged_fn(self.dcm_fn_s1, self.tmp_data_dir, time_point='T0')
         self.assertEqual(output_fn, expected_fn)
 
     def test_export_copy_single_file(self):
