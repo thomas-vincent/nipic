@@ -21,7 +21,14 @@ pv.global_theme.transparent_background = True
 
 from scipy import ndimage as ndi
 from scipy.spatial.distance import pdist
+
 import nipic.csvd as svd
+
+from nipic.nipype_tools import first_of
+from nipype.pipeline import engine as pe
+from nipype.interfaces import utility as niu
+from nipype.interfaces.io import BIDSDataGrabber
+from nipype.interfaces import freesurfer as ni_fs
 
 logging.basicConfig()
 logger = logging.getLogger('nipic')
@@ -31,11 +38,6 @@ def norm01(arr):
     max_val = arr.max()
     return (arr - min_val) / (max_val - min_val)
 
-
-def save_img_with_new_dtype(data, image, out_fn):
-    hd = image.header
-    new_image = nib.Nifti2Image(data, image.affine, header=hd)
-    nib.save(new_image, out_fn)
 
 CUBE_CORNERS = np.array([
     [0,0,0], [0,0,1], [0,1,0], [0,1,1],
@@ -62,6 +64,8 @@ def get_subjects_dir(fs_home=None):
                         'Make sure to source SetUpFreeSurfer.sh or '\
                         'check freesurfer installation.')
     return subjects_dir
+
+
 
 class Freesurfer:
 
@@ -139,19 +143,15 @@ class Freesurfer:
 
         stats = stats.set_index('StructName').stack().to_frame()
         stats.index = ['_'.join(col) for col in stats.index.values]
-        
-        
-            
-        
+
         stats = stats.T
         stats['subject'] = [subject]
         stats.set_index('subject', inplace=True)
-   
 
         return pd.concat((measures, stats), axis=1)
-            
 
-    def stat_seg_measure_global(self, measure_label, subject_names=None, segmentation_label='aseg'):
+    def stat_seg_measure_global(self, measure_label, subject_names=None,
+                                segmentation_label='aseg'):
         pass
         
     def stat_seg_measure_regional(self, measure_label, struct_names=None, subject_names=None, segmentation_label='aseg'):
@@ -409,8 +409,11 @@ class Freesurfer:
     def clean(self):
         shutil.rmtree(self.tmp_dir)
 
-    def load_lut(self, add_csvd=True):
-        lut_fn = op.join(self.home, 'FreeSurferColorLUT.txt')
+    def load_lut(self, aseg_only=True, add_csvd=True):
+        if aseg_only:
+            lut_fn = op.join(self.home, 'ASegStatsLUT.txt')
+        else:
+            lut_fn = op.join(self.home, 'FreeSurferColorLUT.txt')
         if not op.exists(lut_fn):
             raise Exception('Standard FS LUT file not found: %s' % lut_fn)
 
@@ -686,46 +689,45 @@ def set_axes_equal(ax):
     ax.set_ylim3d([y_middle - plot_radius, y_middle + plot_radius])
     ax.set_zlim3d([z_middle - plot_radius, z_middle + plot_radius])
 
+def create_recon_workflow(bids_root, nb_threads=1,
+                          mri_volume_extension='.nii',
+                          fs_subject_id_from_bids=lambda s:s):
 
-import nipype.interfaces.io as nio
-import nipype.pipeline as nppl
-import nipype.interfaces.utility as nut
-import nipype.interfaces.base as nifbase
+    recon_workflow = pe.Workflow(name='fs_reconall')
 
-class ReconAllInputSpec(nifbase.TraitedSpec):
-    t1_fn = nifbase.File(desc="T1", exists=True,
-                         mandatory=True, argstr='-i %s')
-    flair_fn = nifbase.File(desc="FLAIR", exists=True,
-                            mandatory=True, argstr='-FLAIR %s')
-    fs_subject = nifbase.Str(desc="fs_subject", mandatory=True, 
-                             argstr='-s %s')
+    input_node = pe.Node(niu.IdentityInterface(fields=['bids_subject_id',
+                                                       'nb_threads']),
+                         name='inputspec')
+    input_node.inputs.nb_threads = nb_threads
 
+    bids = pe.Node(BIDSDataGrabber(), name='bids-grabber')
+    bids.inputs.base_dir = bids_root
+    bids.inputs.output_query = {'T1': {'suffix' : 'T1w',
+                                       'extension' : mri_volume_extension},
+                                'FLAIR': {'suffix' : 'FLAIR',
+                                          'extension' : mri_volume_extension}}
 
-recon_outputs = {"ASEG" : ('mri', 'aseg.mgz'),
-"RIBBON": "{subject_id}/mri/ribbon.mgz",
-"ANNOT_LH": "{subject_id}/label/lh.aparc.annot",
-"ANNOT_RH": "{subject_id}/label/rh.aparc.annot",
-"WHITE_LH": "{subject_id}/surf/lh.white",
-"WHITE_RH": "{subject_id}/surf/rh.white",
-"PIAL_LH": "{subject_id}/surf/lh.pial",
-"PIAL_RH": "{subject_id}/surf/rh.pial",
-"subject_id": "{subject_id}"}
-class ReconAllOutputSpec(nifbase.TraitedSpec):
-    aseg =  nifbase.File(desc='aseg', exists=True)  
-    
-class ReconAllInterface(nifbase.Interface):
-    input_spec = ReconAllInputSpec
-    output_spec = ReconAllOutputSpec
-    _cmd = 'recon-all -all -parallel -FLAIRpial'
+    recon_workflow.connect(input_node, 'bids_subject_id', bids, 'subject')
 
-    def _list_outputs(self):
-        outputs = self.output_spec().get()
-        fs = Freesurfer()
-        for output_name in list(outputs.keys()):
-            outputs['aseg'] = fs.image_fn(self.inputs.fs_subject, output_name)
-        return outputs
+    make_fs_subject_id = pe.Node(niu.Function(input_names=['bids_subject_id'],
+                                              output_names=['fs_subject_id'],
+                                              function=fs_subject_id_from_bids),
+                                 name='make_fs_subject_id')
 
-    def _run_interface(self, runtime):
-        super(ReconAllInterface, self)._run_interface(runtime)
+    recon_workflow.connect(input_node, 'bids_subject_id',
+                           make_fs_subject_id, 'bids_subject_id')
 
+    recon = pe.Node(ni_fs.ReconAll(), name="fs_reconall")
+    recon.inputs.subjects_dir = op.join(bids_root, 'derivatives', 'freesurfer')
+    recon.inputs.directive = 'all'    
+    #TODO Insure that data is actually 3T 
+    recon.inputs.flags = ["-FLAIRpial", '-parallel', '-3T']
+
+    recon_workflow.connect(make_fs_subject_id, "fs_subject_id",
+                           recon, 'subject_id')
+    recon_workflow.connect(bids, 'T1', recon, "T1_files")
+    recon_workflow.connect(first_of(bids, 'FLAIR', recon_workflow), 'FLAIR',
+                           recon, 'FLAIR_file')
+
+    return recon_workflow
 
