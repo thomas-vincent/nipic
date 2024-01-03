@@ -1,6 +1,5 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 import sys
 import os
 import os.path as op
@@ -8,6 +7,7 @@ from io import StringIO
 import tempfile
 import shutil
 import re
+import colorsys
 
 from subprocess import call
 
@@ -75,3 +75,20 @@ def save_img_with_new_dtype(data, image, out_fn):
     hd = image.header
     new_image = nib.Nifti2Image(data, image.affine, header=hd)
     nib.save(new_image, out_fn)
+
+def change_color_lightness(color_rgba, lightness_ratio):
+    """ 0-255 color coding to comply with freesurfer"""
+    r, g, b, a = [c/255 for c in color_rgba]
+    h, l, s = colorsys.rgb_to_hls(r, g, b)
+    rgb = colorsys.hls_to_rgb(h,
+                              max(0, min(lightness_ratio * l, 1)),
+                              s)
+    return [int(c * 255) for c in rgb] + [color_rgba[3]]
+
+def color_average_rgba(color_1, color_2):
+    r1, g1, b1, a1 = color_1
+    r2, g2, b2, a2 = color_2
+    return ( int(((r1**2 + r2**2) / 2)**.5),
+             int(((g1**2 + g2**2) / 2)**.5),
+             int(((b1**2 + b2**2) / 2)**.5),
+             int((a1 + a2)/2) )

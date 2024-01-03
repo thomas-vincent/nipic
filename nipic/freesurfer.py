@@ -22,8 +22,6 @@ pv.global_theme.transparent_background = True
 from scipy import ndimage as ndi
 from scipy.spatial.distance import pdist
 
-import nipic.csvd as svd
-
 from nipic.nipype_tools import first_of
 from nipype.pipeline import engine as pe
 from nipype.interfaces import utility as niu
@@ -51,13 +49,17 @@ STATS_TABLE_RE = re.compile(r'^(# ColHeaders.*\n(?:.+\n)+)', flags=re.MULTILINE)
 import io
 import pandas as pd
 
-def get_subjects_dir(fs_home=None):
+def get_fs_home(fs_home=None):
     home = (fs_home if fs_home is not None
             else os.getenv('FREESURFER_HOME'))
     if len(home) == 0:
         raise Exception('FREESURFER_HOME env variable not found. ' \
                         'Make sure to source SetUpFreeSurfer.sh or '\
                         'check freesurfer installation.')
+    return home
+
+def get_subjects_dir(fs_home=None):
+    get_fs_home(fs_home)
     subjects_dir = os.getenv('SUBJECTS_DIR')
     if subjects_dir is None or len(subjects_dir) == 0:
         raise Exception('SUBJECTS_DIR env variable not defined. ' \
@@ -65,7 +67,42 @@ def get_subjects_dir(fs_home=None):
                         'check freesurfer installation.')
     return subjects_dir
 
+def read_lut_file(lut_fn):
+    lut = {}
+    with open(lut_fn) as flut:
+        for line in flut.readlines():
+            line = line.strip('\n')
+            if not line.startswith('#') and not len(line) == 0:
+                toks = line.split()
+                lut[int(toks[0])] = {'name':toks[1],
+                                     'color':[int(toks[2]),
+                                              int(toks[3]),
+                                              int(toks[4]),
+                                              int(toks[5])]}
+    return lut
 
+def load_lut(fs_home=None, aseg_only=True, add_csvd=True):
+    fs_home = get_fs_home(fs_home)
+
+    if aseg_only:
+        lut_fn = op.join(fs_home, 'ASegStatsLUT.txt')
+    else:
+        lut_fn = op.join(fs_home, 'FreeSurferColorLUT.txt')
+    if not op.exists(lut_fn):
+        raise Exception('Standard FS LUT file not found: %s' % lut_fn)
+
+    lut = read_lut_file(lut_fn)
+    if add_csvd:
+        lut.update(svd.fs_csvd_lut)
+    return lut
+
+def lut_to_str(lut):
+    lines = []
+    for idx, tissue in lut.items():
+        name = tissue['name']
+        r, g, b, a = tissue['color']
+        lines.append(f'{idx}\t{name}\t{r}\t{g}\t{b}\t{a}')
+    return '\n'.join(lines)
 
 class Freesurfer:
 
@@ -409,7 +446,7 @@ class Freesurfer:
     def clean(self):
         shutil.rmtree(self.tmp_dir)
 
-    def load_lut(self, aseg_only=True, add_csvd=True):
+    def load_lut(self, aseg_only=True):
         if aseg_only:
             lut_fn = op.join(self.home, 'ASegStatsLUT.txt')
         else:
@@ -428,9 +465,6 @@ class Freesurfer:
                                                   int(toks[3]),
                                                   int(toks[4]),
                                                   int(toks[5])]}
-
-        if add_csvd:
-            lut.update(svd.fs_csvd_lut)
         return lut
 
     def mri_fn(self, subject_name, volume_bfn):
