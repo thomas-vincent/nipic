@@ -151,7 +151,8 @@ def main():
                 os.copy(fs_orig_fn, fs_edit_fn)
         volumes += [FINAL_SURF_EDIT]
 
-    cmd = (['freeview', '--hide-3d-slices', '--neurological-view'] +
+    # '--neurological-view'
+    cmd = (['freeview', '--hide-3d-slices'] +
            ['-v'] + list(chain(*[[':'.join([v['fn'].format(root=sroot)] +
                                            [s.format(root=sroot, subject=subj) for s in
                                             v.get('p_%d' % isubj, [])])
