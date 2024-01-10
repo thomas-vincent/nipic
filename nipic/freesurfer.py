@@ -723,13 +723,12 @@ def set_axes_equal(ax):
     ax.set_ylim3d([y_middle - plot_radius, y_middle + plot_radius])
     ax.set_zlim3d([z_middle - plot_radius, z_middle + plot_radius])
 
-def create_recon_workflow(bids_root, nb_threads=1,
-                          mri_volume_extension='.nii',
-                          fs_subject_id_from_bids=lambda s:s):
+def create_recon_workflow(bids_root, nb_threads=1, mri_volume_extension='.nii'):
 
     recon_workflow = pe.Workflow(name='fs_reconall')
 
     input_node = pe.Node(niu.IdentityInterface(fields=['bids_subject_id',
+                                                       'fs_subject_id',
                                                        'nb_threads']),
                          name='inputspec')
     input_node.inputs.nb_threads = nb_threads
@@ -743,22 +742,13 @@ def create_recon_workflow(bids_root, nb_threads=1,
 
     recon_workflow.connect(input_node, 'bids_subject_id', bids, 'subject')
 
-    make_fs_subject_id = pe.Node(niu.Function(input_names=['bids_subject_id'],
-                                              output_names=['fs_subject_id'],
-                                              function=fs_subject_id_from_bids),
-                                 name='make_fs_subject_id')
-
-    recon_workflow.connect(input_node, 'bids_subject_id',
-                           make_fs_subject_id, 'bids_subject_id')
-
     recon = pe.Node(ni_fs.ReconAll(), name="fs_reconall")
     recon.inputs.subjects_dir = op.join(bids_root, 'derivatives', 'freesurfer')
-    recon.inputs.directive = 'all'    
-    #TODO Insure that data is actually 3T 
+    recon.inputs.directive = 'all'
+    #TODO Insure that data is actually 3T
     recon.inputs.flags = ["-FLAIRpial", '-parallel', '-3T']
 
-    recon_workflow.connect(make_fs_subject_id, "fs_subject_id",
-                           recon, 'subject_id')
+    recon_workflow.connect(input_node, "fs_subject_id", recon, 'subject_id')
     recon_workflow.connect(bids, 'T1', recon, "T1_files")
     recon_workflow.connect(first_of(bids, 'FLAIR', recon_workflow), 'FLAIR',
                            recon, 'FLAIR_file')
