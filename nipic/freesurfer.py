@@ -22,12 +22,6 @@ pv.global_theme.transparent_background = True
 from scipy import ndimage as ndi
 from scipy.spatial.distance import pdist
 
-from nipic.nipype_tools import first_of
-from nipype.pipeline import engine as pe
-from nipype.interfaces import utility as niu
-from nipype.interfaces.io import BIDSDataGrabber
-from nipype.interfaces import freesurfer as ni_fs
-
 logging.basicConfig()
 logger = logging.getLogger('nipic')
 
@@ -724,6 +718,12 @@ def set_axes_equal(ax):
     ax.set_zlim3d([z_middle - plot_radius, z_middle + plot_radius])
 
 def create_recon_workflow(bids_root, nb_threads=1, mri_volume_extension='.nii'):
+
+    from nipic.nipype_tools import first_of
+    from nipype.pipeline import engine as pe
+    from nipype.interfaces import utility as niu
+    from nipype.interfaces.io import BIDSDataGrabber
+    from nipype.interfaces import freesurfer as ni_fs
 
     recon_workflow = pe.Workflow(name='fs_reconall')
 
