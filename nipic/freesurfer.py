@@ -75,7 +75,7 @@ def read_lut_file(lut_fn):
                                               int(toks[5])]}
     return lut
 
-def load_lut(fs_home=None, aseg_only=True, add_csvd=True):
+def load_lut(fs_home=None, aseg_only=True):
     fs_home = get_fs_home(fs_home)
 
     if aseg_only:
@@ -85,10 +85,7 @@ def load_lut(fs_home=None, aseg_only=True, add_csvd=True):
     if not op.exists(lut_fn):
         raise Exception('Standard FS LUT file not found: %s' % lut_fn)
 
-    lut = read_lut_file(lut_fn)
-    if add_csvd:
-        lut.update(svd.fs_csvd_lut)
-    return lut
+    return read_lut_file(lut_fn)
 
 def lut_to_str(lut):
     lines = []

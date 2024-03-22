@@ -106,7 +106,7 @@ class SAMSEG(CommandLine):
 
     def _list_outputs(self):
         outputs = self.output_spec().get()
-        
+
         outputs['WMH_PPM_file'] = glob(op.join(self.inputs.output_dir,
                                                'posteriors',
                                                'WM-hypointensities.*'))[0]
@@ -181,9 +181,9 @@ def create_csvd_workflow(fs_subjects_dir, fs_subject_id, bullseye_out_dir,
     fs_subject_dir = op.join(fs_subjects_dir, fs_subject_id)
 
     csvd_work_dir = work_dir + '_csvd' if work_dir is not None else None
-    csvd_workflow = pe.Workflow(name='CSVD_workflow',
+    csvd_workflow = pe.Workflow(name='CSVD_workflow_' + fs_subject_id,
                                 base_dir=csvd_work_dir)
-    
+
     be_work_dir = work_dir + '_bullseye' if work_dir is not None else None
     bullseye_workflow = create_bullseye_pipeline(fs_subjects_dir, be_work_dir,
                                                  bullseye_out_dir,
@@ -241,7 +241,7 @@ def create_csvd_workflow(fs_subjects_dir, fs_subject_id, bullseye_out_dir,
 
     csvd_workflow.connect(coreg_input, 'FLAIRraw', apply_coreg, 'source_file')
     csvd_workflow.connect(coreg_input, 'T1_orig', apply_coreg, 'target_file')
-    
+
     csvd_workflow.connect(coreg, 'out_lta_file', apply_coreg, 'reg_file')
     csvd_workflow.connect(apply_coreg_output, 'FLAIRraw_reg_to_orig',
                           apply_coreg, 'transformed_file')
@@ -286,6 +286,10 @@ def create_csvd_workflow(fs_subjects_dir, fs_subject_id, bullseye_out_dir,
                                                 'aseg_csvd_bullseye' + ext)
     csvd_split_be.inputs.out_seg_lut_file = op.join(fs_subject_dir, 'mri',
                                                     'aseg_csvd_bullseye_LUT.txt')
+    csvd_workflow.connect(merge_csvd_seg, 'merged_csvd_aseg_file',
+                          csvd_split_be, 'seg_file')
+    csvd_workflow.connect(merge_csvd_seg, 'merged_csvd_aseg_lut_file',
+                          csvd_split_be, 'seg_lut_file')
     csvd_workflow.connect(bullseye_workflow, 'bullseye_wmparc.out_file',
                           csvd_split_be, 'parcellation_file')
     csvd_workflow.connect(dump_bullseye_lut, 'bullseye_lut_file',
@@ -296,19 +300,23 @@ def create_csvd_workflow(fs_subjects_dir, fs_subject_id, bullseye_out_dir,
                                                     'aseg_csvd_shells' + ext)
     csvd_split_shells.inputs.out_seg_lut_file = \
         op.join(fs_subject_dir, 'mri', 'aseg_csvd_shells_LUT.txt')
-    csvd_workflow.connect(bullseye_workflow, 'shells_wmparc.out_file',
+    csvd_workflow.connect(merge_csvd_seg, 'merged_csvd_aseg_file',
+                          csvd_split_shells, 'seg_file')
+    csvd_workflow.connect(merge_csvd_seg, 'merged_csvd_aseg_lut_file',
+                          csvd_split_shells, 'seg_lut_file')
+    csvd_workflow.connect(bullseye_workflow, 'depth_wmparc.out_file',
                           csvd_split_shells, 'parcellation_file')
-    csvd_workflow.connect(dump_bullseye_lut, 'shells_lut_file',
+    csvd_workflow.connect(dump_bullseye_lut, 'depth_lut_file',
                           csvd_split_shells, 'parcellation_lut_file')
-    
+
     # TODO aseg_CSVD inter arterial territories
     # TODO aseg_CSVD inter arterial bullseye
 
     if 0:
         # Intersection of bullseye and aseg
         # Produce a LUT <seg_id>_<BE_parc_id>
-    
-        # TODO seg stats 
+
+        # TODO seg stats
         seg_stats = pe.Node(fs.SegStats(), name='seg_stats')
         seg_stats.inputs.subject = ...
         seg_stats.inputs.args = ('--seed 1234 --seg mri/aseg_csvd_bulleseye.mgz '
@@ -322,9 +330,8 @@ def create_csvd_workflow(fs_subjects_dir, fs_subject_id, bullseye_out_dir,
                                  '--subject 00006_T0 ')
         csvd_workflow.connect(merge_csvd_aseg, 'csvd_aseg_file',
                               seg_stats, 'segmentation_file')
-    
         # TODO produce radial plots for all CSVD
-        
+
     return csvd_workflow
 
 class BullseyeLUTInputSpec(BaseInterfaceInputSpec):
@@ -361,7 +368,7 @@ class BullseyeLUT(BaseInterface):
 
 
 def filter_samseg_wmh(aseg_fn, raw_flair_fn, samseg_wmh_ppm_fn,
-                      out_WM_no_GM_mask_fn, out_WMH_mask_fn):    
+                      out_WM_no_GM_mask_fn, out_WMH_mask_fn):
     # load WM mask
     aseg_img = nib.load(aseg_fn)
     aseg = aseg_img.get_fdata().astype(int)
@@ -478,8 +485,7 @@ class MergeCSVDSeg(BaseInterface):
             self.inputs.out_merged_csvd_aseg_lut_file
         return outputs
 
-def merge_csvd_aseg(aseg_fn, wmh_fn, parcellation_fn, parcellation_lut_fn,
-                    out_aseg_fn, out_aseg_lut_fn):
+def merge_csvd_aseg(aseg_fn, wmh_fn, out_aseg_fn, out_aseg_lut_fn):
     aseg_img = nib.load(aseg_fn)
     aseg = aseg_img.get_fdata().astype(int)
 
@@ -488,12 +494,8 @@ def merge_csvd_aseg(aseg_fn, wmh_fn, parcellation_fn, parcellation_lut_fn,
     wmh[np.where(wmh==WMH_SAMSEG_FP)] = 0
 
     wmh_mask = np.where(wmh != 0)
-    
-    aseg[wmh_mask] = wmh[wmh_mask]
 
-    save_img_with_new_dtype(aseg, aseg_img, out_aseg_fn)
-    with open(out_aseg_lut_fn, 'w') as fout:
-        fout.write(lut_to_str(seg_lut))
+    aseg[wmh_mask] = wmh[wmh_mask]
 
     aseg_lut = load_lut(aseg_only=True)
     aseg_lut.update(fs_csvd_lut)
@@ -505,6 +507,8 @@ def merge_csvd_aseg(aseg_fn, wmh_fn, parcellation_fn, parcellation_lut_fn,
 class SplitCSVDSegInputSpec(BaseInterfaceInputSpec):
     seg_file = File(mandatory=True,
                     desc='Segmentation file in which to split CSVD clusters')
+
+    seg_lut_file = File(mandatory=True, desc='LUT file for input parcellation')
 
     parcellation_file = File(mandatory=True,
                              desc='Parcellation file to split CSVD clusters')
@@ -518,9 +522,8 @@ class SplitCSVDSegInputSpec(BaseInterfaceInputSpec):
     out_seg_lut_file = File(mandatory=True, desc='Output seg LUT file',
                             hash_files=False)
 
-    
 class SplitCSVDSegOutputSpec(TraitedSpec):
-    split_seg_file = File(desc='Splitte seg file')
+    split_seg_file = File(desc='Splitted seg file')
     split_seg_lut_file = File(desc='Splitted seg LUT file')
 
 class SplitCSVDSeg(BaseInterface):
@@ -528,13 +531,13 @@ class SplitCSVDSeg(BaseInterface):
     output_spec = SplitCSVDSegOutputSpec
 
     def _run_interface(self, runtime):
-        split_csvd_seg(
-            self.inputs.csvd_seg_file,
-            self.inputs.csvd_seg_lut_file,
+        split_seg(
+            self.inputs.seg_file,
+            self.inputs.seg_lut_file,
             self.inputs.parcellation_file,
             self.inputs.parcellation_lut_file,
-            self.inputs.out_split_csvd_seg_file,
-            self.inputs.out_split_csvd_seg_lut_file
+            self.inputs.out_seg_file,
+            self.inputs.out_seg_lut_file
         )
         return runtime
 
@@ -544,8 +547,8 @@ class SplitCSVDSeg(BaseInterface):
         outputs['split_seg_lut_file'] = self.inputs.out_seg_lut_file
         return outputs
 
-def split_csvd_seg(csvd_seg_fn, csvd_seg_lut_fn, parcellation_fn,
-                   parcellation_lut_fn, out_seg_fn, out_seg_lut_fn):
+def split_seg(seg_fn, seg_lut_fn, parcellation_fn,
+              parcellation_lut_fn, out_seg_fn, out_seg_lut_fn):
     parcellation_img = nib.load(parcellation_fn)
     parcellation = parcellation_img.get_fdata().astype(int)
     parcellation_lut = read_lut_file(parcellation_lut_fn)
@@ -553,13 +556,13 @@ def split_csvd_seg(csvd_seg_fn, csvd_seg_lut_fn, parcellation_fn,
     nb_parcels = len(parcellation_lut)
     lightness_ratios = [0.5 * (1 + i/(nb_parcels-1)) for i in range(nb_parcels)]
 
-    seg_img = nib.load(csvd_seg_fn)
+    seg_img = nib.load(seg_fn)
     seg = seg_img.get_fdata().astype(int)
-    seg_lut = read_lut(csvd_seg_lut_fn)
+    seg_lut = read_lut_file(seg_lut_fn)
 
     cluster_index = max(idx for idx in seg_lut) + 1
     for csvd_index, csvd_def in fs_csvd_lut.items():
-        csvd_mask = (aseg == csvd_index)
+        csvd_mask = (seg == csvd_index)
         for (parcel_index, parcel_def), l_ratio in zip(parcellation_lut.items(),
                                                        lightness_ratios):
             m = np.where(np.bitwise_and(csvd_mask,
@@ -573,7 +576,6 @@ def split_csvd_seg(csvd_seg_fn, csvd_seg_lut_fn, parcellation_fn,
         seg_lut.pop(csvd_def['name'], None)
 
     save_img_with_new_dtype(seg, seg_img, out_seg_fn)
-
     with open(out_seg_lut_fn, 'w') as fout:
         fout.write(lut_to_str(seg_lut))
 
