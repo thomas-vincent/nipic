@@ -26,10 +26,10 @@ from pydicom.data import get_testdata_file
 from pydicom.errors import InvalidDicomError
 
 def main():
-    min_args = 2
-    max_args = 2
+    min_args = 3
+    max_args = 3
 
-    usage = 'usage: %prog [options] DICOM_FOLDERS OUTPUT_FOLDER'
+    usage = 'usage: %prog [options] OUTPUT_FOLDER SERIES_PARAMETERS DICOM_FOLDERS'
     description = 'Convert Dicom files to nifti files organised in BIDS folders.'
 
     parser = OptionParser(usage=usage, description=description)
@@ -56,9 +56,10 @@ def main():
         parser.print_help()
         return 1
 
-    output_bids_path = args[-1]
-    input_dcm_pathes = args[:-1]
-    dcm_export_to_nii(input_dcm_pathes, output_bids_path)
+    output_bids_path = args[0]
+    series_parameters_fn = args[1]
+    input_dcm_pathes = args[2:]
+    dcm_export_to_nii(input_dcm_pathes, output_bids_path, series_parameters_fn)
 
 
 def list_leaf_dirs(root, all_dirs=None):
@@ -78,11 +79,11 @@ from string import Formatter
 
 import pandas as pd
 
-BIDS_PATTERN = op.join('{PatientID}', '{StudyID}{TimePoint}_{StudyDate}',
+BIDS_PATTERN = op.join('{PatientID}', '{StudyID}_{StudyDate}',
                        '{SeriesNumber}_{SeriesDescription}',
-                       '{PatientID}_{TimePoint}_{SeriesDescription}_{InstanceNumber}_{ContentTime}.dcm')
+                       '{PatientID}_{SeriesDescription}_{InstanceNumber}_{ContentTime}.dcm')
 
-DCMNIIX_BASE_PATTERN = 'sub-{PatientID}/ses-{StudyDate}{TimePoint}/{bids_type}/sub-{PatientID}_ses-{StudyDate}{TimePoint}_acq-{bids_series_description}'
+DCMNIIX_BASE_PATTERN = 'sub-{PatientID}/ses-{StudyDate}/{bids_type}/sub-{PatientID}_ses-{StudyDate}_acq-{bids_series_description}'
 
 DCMNIIX_MAIN_PATTERN = DCMNIIX_BASE_PATTERN + '_{bids_suffix}'
 
@@ -90,19 +91,19 @@ DCMNIIX_ME_PATTERN = DCMNIIX_BASE_PATTERN + '_echo-{echo_number}_{bids_suffix}'
 DCMNIIX_ME_MC_PATTERN = DCMNIIX_BASE_PATTERN + '_run-1_echo-{echo_number}_coil-{coil}_{bids_suffix}' 
 
 export_rules = {
-    # '(.*t2_gre_3d_field_map.*)|(.*B1Map.*)': { 
-        # 'bids_type' : 'fmap',
-        # 'dcm2niix_pattern' : DCMNIIX_ME_PATTERN
+    # '(.*t2_gre_3d_field_map.*)|(.*B1Map.*)': {
+    #     'bids_type' : 'fmap',
+    #     'dcm2niix_pattern' : DCMNIIX_ME_PATTERN
     # },
-    # '.*field_map.*' : { 
-        # 'bids_type' : 'fmap',
-        # 'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
-        # },
-    # '(.*SWI.*OPT1.*)' : {
-        # 'bids_type' : 'anat',
-        # 'dcm2niix_pattern' : DCMNIIX_ME_MC_PATTERN
-    # },
-    '(.*MPRAGE.*)|(.*FLAIR.*)' : {
+    # '.*field_map.*' : {
+    #     'bids_type' : 'fmap',
+    #     'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
+    #     },
+    '(.*SWI.*OPT1.*)' : {
+        'bids_type' : 'anat',
+        'dcm2niix_pattern' : DCMNIIX_ME_MC_PATTERN
+    },
+    '(.*MPRAGE.*)|(.*FLAIR.*)|(.*toffl3d.*)|(.*tof_fl3d.*)' : {
         'bids_type' : 'anat',
         'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
     },
@@ -110,17 +111,17 @@ export_rules = {
         # 'bids_type' : 'anat',
         # 'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
     # },
-    # '(.*BOLD.*)' : {
+    #'(.*BOLD.*)' : {
         # 'bids_type' : 'func',
         # 'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
-    # },
+    #},
     # '(.*DIFF.*)' : {
         # 'bids_type' : 'dwi',
         # 'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
-    # },   
+    # },
     # '(.*pcasl.*)' : {
-        # 'bids_type' : 'perf',
-        # 'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
+    #     'bids_type' : 'perf',
+    #     'dcm2niix_pattern' : DCMNIIX_MAIN_PATTERN
     # },
     'Localizer_Brain.*' : None,
     'MoCoSeries' : None,
@@ -368,7 +369,6 @@ def get_studies_info(ds):
                 series_descr = getattr(
                                 series, "SeriesDescription", "(no value available)"
                             )
-                
                 images = [
                     ii for ii in series.children
                     if ii.DirectoryRecordType == "IMAGE"
@@ -400,13 +400,12 @@ def get_studies_info(ds):
                     except AttributeError:
                         logger.error('Could not get AcquisitionDateTime for %s', os.fspath(p))
 
-                    
             print(
                 f"{'  ' * 1}STUDY: StudyID={study.StudyID}, "
                 f"StudyDate={study.StudyDate}, StudyDescription={study_descr} - "
                 f"StartDate={ts_start}, EndDate={ts_end} - "
                 f"Duration={ts_end - ts_start}"
-            )   
+            )
             studies_info.append((patient.PatientID, study.StudyDate, study.StudyTime, {'start_time' : ts_start, 'end_time' : ts_end}))
     return studies_info
 
@@ -418,14 +417,18 @@ def add_series(root, series_fns):
         logger.info('Resolve series in %s', op.join(path))
         for rfn in rfns:
             fn = op.join(path, rfn)
+            if rfn.lower().endswith('dicomdir'):
+                logger.info('Skip %s', fn)
+                continue
             try:
-                h = read_dcm_header(fn, 
+                h = read_dcm_header(fn,
                                     required_fields=['StudyID', 'StudyDate',
                                                      'SeriesInstanceUID', 'PatientID'],
                                     allow_missing_field=True)
-            except InvalidDicomError:
-                logger.info('Could not read DCM file %s', rfn)
+            except:
+                logger.info('Could not read DCM file %s', fn)
                 continue
+
             if 'SeriesInstanceUID' in h:
                 series_fns[h['SeriesInstanceUID']].add(fn)
                 series_info.add((h['StudyDate'], h['PatientID']))
@@ -444,13 +447,17 @@ def group_series(series_fn, series_link_root_dir):
             bfn = op.basename(fn)
             src_fn = os.path.abspath(fn)
             dest_fn = op.join(series_dir, bfn)
-            logger.debug('Create sym link %s -> %s ', src_fn, dest_fn)
-            try:
-                Path(dest_fn).symlink_to(Path(src_fn))
-            except:
-                logger.error('Sym link failed. Series ignored')
-                series_dirs.pop()
-                break
+            if op.exists(dest_fn):
+                logger.warning('Cannot create sym link because target exists: %s -> %s', src_fn, dest_fn)
+            else:
+                logger.debug('Create sym link %s -> %s ', src_fn, dest_fn)
+                try:
+                    Path(dest_fn).symlink_to(Path(src_fn))
+                except:
+                    logger.warning('Sym link failed. Series ignored')
+                    from IPython import embed; embed()
+                    series_dirs.pop()
+                    break
     return series_dirs
 
 def parse_series_info(series_dcm_path):
@@ -463,16 +470,20 @@ def parse_series_info(series_dcm_path):
     ts_end = datetime.fromtimestamp(0)
     date_fmt = '%Y%m%d%H%M%S'
     sizes = set()
- 
+    nb_frames = set()
+    coils_combined = set()
+    component = set()
+    approx_temporal_positions = set()
     for dcm_fn in dcm_fns:
-        h = read_dcm_header(series_dcm_path / dcm_fn, 
+        h = read_dcm_header(series_dcm_path / dcm_fn,
                             required_fields=['StudyID', 'StudyDate',
-                                             'SeriesInstanceUID', 
-                                             'SeriesDescription', 
+                                             'SeriesInstanceUID',
+                                             'SeriesDescription',
                                              'PatientID', 'AcquisitionDate',
                                              'AcquisitionDateTime', 'RepetitionTime',
-                                             'AcquisitionTime', 'Rows', 'Columns', 
-                                             'NumberOfFrames'],
+                                             'AcquisitionTime', 'Rows', 'Columns',
+                                             'NumberOfFrames',
+                                             'NumberOfTemporalPositions'],
                             allow_missing_field=True)
         if 'AcquisitionDateTime' in h:
             adate = h['AcquisitionDateTime'].split('.')[0]
@@ -481,7 +492,7 @@ def parse_series_info(series_dcm_path):
         else:
             logger.warning('Could not retrieve acquisition time from %s in series %s', dcm_fn, h['SeriesDescription'])
             adate = None
-        
+
         if adate is not None:
             ts = datetime.strptime(adate, date_fmt)
             ts_start = min(ts_start, ts)
@@ -489,65 +500,117 @@ def parse_series_info(series_dcm_path):
         if 'Rows' in h and 'Columns' in h:
             if 'NumberOfFrames' in h:
                 sizes.add(f'{h["NumberOfFrames"]}fx{h["Rows"]}x{h["Columns"]}')
+                nb_frames.add(h["NumberOfFrames"])
             else:
-                sizes.add(f'?fx{h["Rows"]}x{h["Columns"]}')
+                sizes.add(f'1fx{h["Rows"]}x{h["Columns"]}')
+                nb_frames.add(1)
         else:
             logger.warning('Could not retrieve Rows / Columns from %s in series %s', dcm_fn, h['SeriesDescription'])
 
+        coils_combined.add(h["coils_combined"])
+        component.add(h['complex_component'])
+        if 'NumberOfTemporalPositions' in h:
+            approx_temporal_positions.add(max(1, round(h['NumberOfTemporalPositions'] / 100) * 100))
+        else:
+            logger.warning('No field NumberOfTemporalPositions in %s - %s. Assume 1.', h['SeriesDescription'], dcm_fn)
+            approx_temporal_positions.add(1)
     if ts_start == ts_end and 'RepetitionTime' in h:
         ts_end = ts_start + pd.Timedelta(h['RepetitionTime'] * len(dcm_fns), unit="ms")
 
+    logger.info('Finished parsing series %s - %s - %s. Nb instances: %d',
+                h['SeriesDescription'], h['StudyID'], h['PatientID'], len(dcm_fns))
     return {
-        **h, 
+        **h,
         **{
             'Timestamp_First_Image' : ts_start,
             'Timestamp_Last_Image' : ts_end,
+            'coils_combined' : coils_combined.pop() if len(coils_combined)==1 else None,
+            'complex_component' : component.pop() if len(component)==1 else None,
             'Nb_Instances' : len(dcm_fns),
+            'Nb_Frames' : nb_frames.pop() if len(nb_frames)==1 else None,
+            'ApproxNumberOfTemporalPositions' :  (approx_temporal_positions.pop()
+                                                  if len(approx_temporal_positions)==1
+                                                  else None),
             'Instance_Size' : ', '.join(sizes)
         }
     }
-
-
 
 def get_series_uid(series_dcm_path):
     series_dcm_path = Path(series_dcm_path)
     dcm_fns = os.listdir(series_dcm_path)
     if len(dcm_fns) == 0:
         return None
-    h = read_dcm_header(series_dcm_path / dcm_fns[0], 
+    h = read_dcm_header(series_dcm_path / dcm_fns[0],
                         required_fields=['SeriesInstanceUID'])
     return h['SeriesInstanceUID']
 
-manifest_columns = ['SeriesInstanceUID', 'PatientID', 
-                    'StudyDate', 'SeriesDescription', 
-                    'Timestamp_First_Image', 'Timestamp_Last_Image',
-                    'Nb_Instances', 'Instance_Size']
-def update_manifest(series_dirs, manifest_fn):
+manifest_columns = ['SeriesInstanceUID', 'PatientID',
+                    'StudyDate', 'SeriesDescription', 'Series_OK',
+                    'complex_component', 'coils_combined',
+                    'Nb_Instances', 'Nb_Frames', 'Instance_Size', 'ApproxNumberOfTemporalPositions',
+                    'Timestamp_First_Image', 'Timestamp_Last_Image']
+
+def check_series(manifest_df, series_parameters_fn):
+    parameters_df = pd.read_excel(series_parameters_fn, engine='openpyxl')
+    parameters_df = parameters_df.set_index(['SeriesDescription', 'complex_component',
+                                             'coils_combined', 'ApproxNumberOfTemporalPositions'])
+    manifest_df['coils_combined'] = manifest_df['coils_combined'].astype(float)
+    if 'Expected_Instances_x_Frames' in manifest_df.columns:
+        manifest_df = manifest_df.drop(columns=['Expected_Instances_x_Frames'])
+    manifest_df = manifest_df.join(parameters_df, on=['SeriesDescription', 'complex_component',
+                                                      'coils_combined', 'ApproxNumberOfTemporalPositions'])
+    manifest_df['Series_OK'] = ( (manifest_df['Nb_Instances'] * manifest_df['Nb_Frames']) ==
+                                 manifest_df['Expected_Instances_x_Frames'] )
+    return manifest_df
+
+def update_manifest(series_dirs, manifest_fn, series_parameters_fn):
     if not op.exists(manifest_fn):
         manifest_df = pd.DataFrame(columns=manifest_columns)
         manifest_df.to_excel(manifest_fn)
-        
+
     manifest_df = pd.read_excel(manifest_fn, engine='openpyxl')
     manifest_df.set_index('SeriesInstanceUID', inplace=True)
-       
-    series_recorded = set(manifest_df.index)
-    to_concat = [manifest_df]
+
+    to_concat = []
+
     for series_path in series_dirs:
         series_uid = get_series_uid(series_path)
-        if series_uid is not None and series_uid not in series_recorded:
+        if series_uid is None:
+            continue
+
+        if (series_uid in manifest_df.index and
+            not manifest_df.loc[series_uid, 'Series_OK']):
+            manifest_df = manifest_df.drop(index=series_uid)
+
+        if series_uid not in manifest_df.index:
             try:
                 series_info = parse_series_info(series_path)
             except InvalidDicomError:
                 logger.error('Error reading DICOM in %s (skipped)', series_path)
                 continue
             if series_info is not None:
+                series_info['Series_OK'] = pd.NA
                 to_concat.append(pd.DataFrame.from_records([series_info])[manifest_columns]
                                 .set_index('SeriesInstanceUID'))
-    manifest_df = pd.concat(to_concat)
+    manifest_df = pd.concat([manifest_df] + to_concat)
+    manifest_df = check_series(manifest_df, series_parameters_fn)
     manifest_df.reset_index().to_excel(manifest_fn, index=False)
 
-def dcm_export_to_nii(dcm_pathes, output_folder, time_point=None, 
+def dcm_export_to_nii(dcm_pathes, output_folder, series_parameters_fn,
                       project_name=None, force=False):
+
+    dataset_description_fn = op.join(output_folder, 'dataset_description.json')
+    if not op.exists(dataset_description_fn):
+        if project_name is None:
+             dcm_fn = get_first_fn(dcm_pathes[0],
+                                   lambda fn: fn.lower().endswith('dcm'))
+             print('dcm_pathes', dcm_pathes)
+             h = read_dcm_header(dcm_fn, required_fields=['StudyID'])
+             project_name = h['StudyID']
+
+        with open(dataset_description_fn, 'w') as fout:
+                  json.dump({'Name' : project_name,
+                             'BIDSVersion' : BIDSVersion}, fout)
 
     logger.info('List directories...')
     series_fns = defaultdict(set)
@@ -558,19 +621,8 @@ def dcm_export_to_nii(dcm_pathes, output_folder, time_point=None,
         add_series(dcm_path, series_fns)
     series_dirs = group_series(series_fns, series_tmp_dir)
 
-    update_manifest(series_dirs, op.join(output_folder, 'series_info.xlsx'))
-
-    dataset_description_fn = op.join(output_folder, 'dataset_description.json')
-    if not op.exists(dataset_description_fn):
-        if project_name is None:
-             dcm_fn = get_first_fn(dcm_dirs[0], 
-                                   lambda fn: fn.lower().endswith('dcm'))
-             h = read_dcm_header(dcm_fn, required_fields=['StudyID'])
-             project_name = h['StudyID']
-
-        with open(dataset_description_fn, 'w') as fout:
-                  json.dump({'Name' : project_name,
-                             'BIDSVersion' : BIDSVersion}, fout)
+    update_manifest(series_dirs, op.join(output_folder, 'series_info.xlsx'),
+                    series_parameters_fn)
 
     export_info = ExportInfo(op.join(output_folder, 'export_info.json'))
     file_operations = dict()
@@ -934,7 +986,7 @@ def read_dcm_header(fn, required_fields, defer_size='1 KB', allow_missing_field=
         try:
             v = dcm.__getattr__(a)
         except AttributeError:
-            
+
             if allow_missing_field:
                 logger.debug('Field %s not found in header of %s', a, fn)
                 continue
@@ -946,10 +998,37 @@ def read_dcm_header(fn, required_fields, defer_size='1 KB', allow_missing_field=
         if a == 'SeriesNumber':
             v = '%03d' % v
         h[a] = v
+
+    description = dcm.__getattr__('SeriesDescription')
+
+    h['coils_combined'] = None
+    try:
+        h['coils_combined'] = dcm[0x52009230][0][0x002111fe][0][0x00211106][0] == 'X'
+    except:
+        try:
+            h['coils_combined'] = dcm[0x00211106][0] == 'X'
+        except:
+            try:
+                h['coils_combined'] = dcm[0x0051100f].value == 'HEA;HEP'
+            except:
+                if not description.lower().strip().endswith('report'):
+                    logger.error('Cannot get coil combination for %s (file: %s)', description, fn)
+
+    h['complex_component'] = None
+    try:
+        h['complex_component'] = dcm.__getattr__('ComplexImageComponent')
+    except:
+        try:
+            h['complex_component'] = {'M' : 'MAGNITUDE', 'P' : 'PHASE',
+                                      'DIFFUSION' : 'MAGNITUDE',
+                                      'FLIP ANGLE MAP' : 'MAGNITUDE'}[dcm[0x00080008][2]]
+        except:
+            logger.error('Cannot get image component for %s (file: %s)', description, fn)
+
     return h
 
 def safe_fn(fn):
-    fn = ''.join(c for c in fn 
+    fn = ''.join(c for c in fn
                  if c.isalpha() or c.isdigit() or c in '- _.' or c==op.sep).rstrip()
     fn = fn.replace(' ', '_').replace('_--_', '_')
     return fn
