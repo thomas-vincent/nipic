@@ -9,11 +9,12 @@ logger = logging.getLogger('nipic')
 
 def main():
 
-    min_args = 0
-    max_args = 0
+    min_args = 1
+    max_args = 1
 
-    usage = 'usage: %prog [options]'
-    description = ('Produce segmentation stats table')
+    usage = 'usage: %prog SEGMENTATION_LABEL [options]'
+    description = ('Produce segmentation stats table. '
+                   'Typically SEGMENTATION_LABEL=aseg')
 
     parser = OptionParser(usage=usage, description=description)
 
@@ -33,6 +34,10 @@ def main():
                       type='str',
                       help='Comma-separated list of measure labels')
 
+    parser.add_option('-p', '--column-prefix', metavar='STR',
+                      type='str',
+                      help='Column prefix to prepend to column labels')
+
     parser.add_option('-o', '--output-file', type='str',
                       metavar='PATH',
                       help='Output files to save table')
@@ -50,6 +55,8 @@ def main():
         parser.print_help()
         sys.exit(1)
 
+    seg_label = args[0]
+
     freesurfer = Freesurfer()
     if options.subjects is not None:
         subjects = options.subjects
@@ -62,16 +69,27 @@ def main():
             return None
         else:
             return [e for e in s.split(split_on) if len(e)>0]
-    to_concat = [freesurfer.stat_seg_to_df(s, struct_names=safe_split(options.region_names, ','),
-                                           struct_stats=safe_split(options.stats, ','),
-                                           measure_labels=safe_split(options.measures, ','))
+    struct_names = safe_split(options.region_names, ',')
+    struct_stats = safe_split(options.stats, ',')
+    measure_labels = safe_split(options.measures, ',')
+    to_concat = [freesurfer.stat_seg_to_df(s, segmentation_label=seg_label,
+                                           struct_names=struct_names,
+                                           struct_stats=struct_stats,
+                                           measure_labels=measure_labels)
                  for s in subjects]
-                 
-    stats = pd.concat((e for e in to_concat if e is not None), axis=0, join='outer')
+
+    stats = pd.concat((e for e in to_concat if e is not None), axis=0,
+                      join='outer')
+
     # from IPython import embed; embed()
-    
+
+    if options.column_prefix is not None:
+        stats = stats.add_prefix(options.column_prefix)
+
+    # from IPython import embed; embed()
+
     if options.output_file is not None:
-        stats.sort_index().reset_index().to_excel(options.output_file, index=False)
-        
-    
-                 
+        (stats.sort_index().reset_index()
+         .to_excel(options.output_file, index=False))
+    else:
+        print(stats.sort_index())

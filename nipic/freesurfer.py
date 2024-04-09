@@ -136,6 +136,7 @@ class Freesurfer:
             return su
 
         measures = pd.DataFrame({'subject' : [subject]})
+        eTIV = None
         for measure_line in MEASURE_RE.findall(content):
             # # Measure BrainSeg, BrainSegVol, Brain Segmentation Volume, 1109112.000000, mm^3
             _, ml, ll, m, mu = [e.strip() for e in measure_line.replace('# Measure ', '').split(',')]
@@ -143,25 +144,28 @@ class Freesurfer:
                 m = int(m)
             else:
                 m = float(m)
-            if measures is None or ml in measure_labels:
+            if measure_labels is None or ml in measure_labels:
                 measures[ml + safe_unit_suffix(mu)] = m
-                
+
             if ml == 'eTIV':
                 eTIV = m
         measures.set_index('subject', inplace=True)
-
+        logger.info('Loaded measures:')
+        logger.info(measures)
+        
         stats_table_str = STATS_TABLE_RE.findall(content)[0].replace('# ColHeaders', '')
         lines = stats_table_str.split('\n')
         header = lines[0].strip().split(' ')
         stats = pd.read_csv(io.StringIO('\n'.join(lines[1:])), header=None,
                             delim_whitespace=True)
         stats.columns = header
-        stats.drop(columns=['Index', 'SegId'], inplace=True)
+        if segmentation_label == 'aseg':
+            stats = stats.drop(columns=['Index', 'SegId'])
 
-        
-        for col in stats.columns:
-            if col != 'StructName':
-                stats[col + '-to-eTIV'] = stats[col] / eTIV
+        if eTIV is not None:
+            for col in stats.columns:
+                if col != 'StructName':
+                    stats[col + '-to-eTIV'] = stats[col] / eTIV
         
         if struct_stats is not None:
             stats = stats[['StructName'] + struct_stats]
@@ -169,6 +173,9 @@ class Freesurfer:
         if struct_names is not None:
             stats = stats[stats['StructName'].isin(struct_names)]
 
+        from IPython import embed; embed()
+        logger.info('Kept structures') # TODO
+        
         stats = stats.set_index('StructName').stack().to_frame()
         stats.index = ['_'.join(col) for col in stats.index.values]
 
@@ -266,7 +273,6 @@ class Freesurfer:
         samseg_wmh_ppm = samseg_wmh_ppm_img.get_fdata()
         wmh = np.zeros_like(aseg)
         wmh[np.where(samseg_wmh_ppm >= svd.WMH_SAMSEG_PPM_THRESHOLD)] = svd.WMH
-        from IPython import embed; embed()
 
         flair_raw_wm = flair_raw[wm_no_subcortical_gm]
         flair_wmh_thresh = np.median(flair_raw_wm) + np.std(flair_raw_wm)
