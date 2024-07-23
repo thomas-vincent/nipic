@@ -19,11 +19,11 @@ def main():
     parser = OptionParser(usage=usage, description=description)
 
     parser.add_option('-s', '--subjects', metavar='LIST_OF_STR',
-                      type='str', 
+                      type='str',
                       help='Comma-separated list of subjects.')
 
     parser.add_option('-t', '--stats', metavar='LIST_OF_STR',
-                      type='str', 
+                      type='str',
                       help='Comma-separated list of stats.')
 
     parser.add_option('-r', '--region-names', metavar='LIST_OF_STR',
@@ -81,12 +81,8 @@ def main():
     stats = pd.concat((e for e in to_concat if e is not None), axis=0,
                       join='outer')
 
-    # from IPython import embed; embed()
-
     if options.column_prefix is not None:
         stats = stats.add_prefix(options.column_prefix)
-
-    # from IPython import embed; embed()
 
     if options.output_file is not None:
         (stats.sort_index().reset_index()

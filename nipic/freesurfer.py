@@ -117,9 +117,9 @@ class Freesurfer:
         self.tmp_dir = tempfile.mkdtemp()
 
 
-    def stat_seg_to_df(self, subject, segmentation_label='aseg', 
+    def stat_seg_to_df(self, subject, segmentation_label='aseg',
                        struct_names=None, struct_stats=None,
-                       measure_labels=None):
+                       measure_labels=None, normalise_by_eTIV=False):
 
         stat_fn = self.stats_fn(subject, segmentation_label + '.stats')
         if not op.exists(stat_fn):
@@ -152,43 +152,48 @@ class Freesurfer:
         measures.set_index('subject', inplace=True)
         logger.info('Loaded measures:')
         logger.info(measures)
-        
+
         stats_table_str = STATS_TABLE_RE.findall(content)[0].replace('# ColHeaders', '')
         lines = stats_table_str.split('\n')
         header = lines[0].strip().split(' ')
         stats = pd.read_csv(io.StringIO('\n'.join(lines[1:])), header=None,
                             delim_whitespace=True)
+        nb_locations = len(stats)
+
         stats.columns = header
         if segmentation_label == 'aseg':
             stats = stats.drop(columns=['Index', 'SegId'])
 
-        if eTIV is not None:
+        if struct_stats is not None:
+            stats = stats[['StructName'] + struct_stats]
+
+        if eTIV is not None and normalise_by_eTIV:
             for col in stats.columns:
                 if col != 'StructName':
                     stats[col + '-to-eTIV'] = stats[col] / eTIV
-        
-        if struct_stats is not None:
-            stats = stats[['StructName'] + struct_stats]
 
         if struct_names is not None:
             stats = stats[stats['StructName'].isin(struct_names)]
 
-        from IPython import embed; embed()
         logger.info('Kept structures') # TODO
-        
+        logger.info(stats.StructName)
+
         stats = stats.set_index('StructName').stack().to_frame()
-        stats.index = ['_'.join(col) for col in stats.index.values]
+        if stats.shape[0] != nb_locations:
+            stats.index = ['_'.join(col) for col in stats.index.values]
+        else:
+            stats.index = stats.index.droplevel(1)
 
         stats = stats.T
         stats['subject'] = [subject]
-        stats.set_index('subject', inplace=True)
+        stats = stats.set_index('subject')
 
         return pd.concat((measures, stats), axis=1)
 
     def stat_seg_measure_global(self, measure_label, subject_names=None,
                                 segmentation_label='aseg'):
         pass
-        
+
     def stat_seg_measure_regional(self, measure_label, struct_names=None, subject_names=None, segmentation_label='aseg'):
         pass
 
@@ -467,6 +472,10 @@ class Freesurfer:
     def mri_fn(self, subject_name, volume_bfn):
         return op.join(self.subject_dir(subject_name), 'mri',
                        volume_bfn)
+
+    def label_fn(self, subject_name, label_bfn):
+        return op.join(self.subject_dir(subject_name), 'label',
+                       label_bfn)
 
     def samseg_fn(self, subject_name, volume_bfn):
         return op.join(self.subject_dir(subject_name), 'mri', 'samseg',
