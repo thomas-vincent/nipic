@@ -78,6 +78,7 @@ setup(name='nipic', version=version['__version__'],
               'fs_seg_stats = nipic.commands.fs_stats_to_table:main',
               'fs_recon_review = nipic.commands.fs_recon_review:main',
               'dcm_export_to_nii = nipic.commands.dcm_export_to_nii:main',
+              'dcm_import_sort = nipic.commands.dcm_sort:main',
               'mri_snap = nipic.commands.mri_snap:main'
           ],
       })
