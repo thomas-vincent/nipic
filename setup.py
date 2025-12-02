@@ -77,6 +77,7 @@ setup(name='nipic', version=version['__version__'],
               'fs_lut = nipic.commands.fs_lut:main',
               'fs_seg_stats = nipic.commands.fs_stats_to_table:main',
               'fs_recon_review = nipic.commands.fs_recon_review:main',
+              'fs_apply_manual_FLAIR_coreg = nipic.commands.fs_apply_FLAIR_coreg_fix:main',
               'dcm_export_to_nii = nipic.commands.dcm_export_to_nii:main',
               'dcm_import_sort = nipic.commands.dcm_sort:main',
               'mri_snap = nipic.commands.mri_snap:main'

@@ -10,6 +10,32 @@ from nipic.freesurfer import Freesurfer
 logger = logging.getLogger('nipic')
 
 # ('aseg.mgz', 'colormap=lut', 'opacity=0.2')
+VOLUMES_NO_FLAIR = [
+    {
+        'fn' : '{root}/mri/T1.mgz',
+        'p_0' : ['name={subject}_T1.mgz'],
+        'p_1' : ['name={subject}_T1.mgz'],
+    },
+    {
+        'fn' : '{root}/mri/wm.mgz',
+        'p_0' : ['name={subject}_wm.mgz',
+                 'colormap=Jet', 'colorscale=2,3',
+                 'opacity=0.3'],
+        'p_1' : ['name={subject}_wm.mgz',
+                 'colormap=PET', 'colorscale=2,3',
+                 'opacity=0.3'],
+    },
+    {
+        'fn' : '{root}/mri/brainmask.mgz',
+        'p_0' : ['name={subject}_brainmask.mgz',
+                 'colormap=Jet', 'colorscale=2,3',
+                 'opacity=0.3'],
+        'p_1' : ['name={subject}_brainmask.mgz',
+                 'colormap=PET', 'colorscale=2,3',
+                 'opacity=0.3'],
+    }
+]
+
 VOLUMES = [
     {
         'fn' : '{root}/mri/T1.mgz',
@@ -125,6 +151,10 @@ def main():
                       help=('Insure brain.finalsurfs.manedit.mgz exists and load it. '
                             'Used for fixing pial surface extending into cerebellum'))
 
+    parser.add_option('-n', '--no-flair', dest='no_flair',
+                      action='store_true', default=False,
+                      help=('Do not load FLAIR'))
+
     (options, args) = parser.parse_args()
 
     logger.setLevel(options.verbose)
@@ -142,7 +172,10 @@ def main():
         with open(fix_notes_fn, 'w') as fout:
             fout.write(empty_fix_notes)
 
-    volumes = VOLUMES
+    if options.no_flair:
+        volumes = VOLUMES_NO_FLAIR
+    else:
+        volumes = VOLUMES
     if options.cerebellum:
         for isubj, (subj, sroot) in enumerate(subjects):
             fs_edit_fn = FINAL_SURF_EDIT['fn'].format(root=sroot)

@@ -72,20 +72,11 @@ def main():
     struct_names = safe_split(options.region_names, ',')
     struct_stats = safe_split(options.stats, ',')
     measure_labels = safe_split(options.measures, ',')
-    to_concat = [freesurfer.stat_seg_to_df(s, segmentation_label=seg_label,
+    stats = freesurfer.all_stats_seg_to_df(subjects, segmentation_label=seg_label,
                                            struct_names=struct_names,
                                            struct_stats=struct_stats,
-                                           measure_labels=measure_labels)
-                 for s in subjects]
-
-    stats = pd.concat((e for e in to_concat if e is not None), axis=0,
-                      join='outer')
-
-    if options.column_prefix is not None:
-        stats = stats.add_prefix(options.column_prefix)
-
-    if options.output_file is not None:
-        (stats.sort_index().reset_index()
-         .to_excel(options.output_file, index=False))
-    else:
+                                           measure_labels=measure_labels,
+                                           column_prefix=options.column_prefix,
+                                           output_file=options.output_file)
+    if options.output_file is None:
         print(stats.sort_index())

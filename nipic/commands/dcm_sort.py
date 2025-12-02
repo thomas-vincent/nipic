@@ -112,6 +112,7 @@ def main():
     logger.info('Parsing %d files from %s. Try to export to %s', len(src_rfns), src_dir, dest_dir)
     for src_rfn in tqdm(src_rfns):
         src_fn = op.join(src_dir, src_rfn)
+
         try:
             dh = read_dcm_header(src_fn, required_fields=['SeriesInstanceUID', 'StudyDate',
                                                           'SeriesDescription', 'PatientID'])
@@ -139,24 +140,23 @@ def main():
         imported_rfns.append(src_rfn)
 
     if options.copy_dir is not None:
-        #if not op.exists(options.copy_dir):
-        #    os.makedirs(options.copy_dir)
 
         logger.info('Copy %d files from %s to %s', len(imported_rfns), src_dir, options.copy_dir)
         for src_rfn in tqdm(imported_rfns):
             dest_fn = op.join(options.copy_dir, src_rfn)
+            dest_dir = op.dirname(dest_fn)
+            if not op.exists(dest_dir):
+                os.makedirs(dest_dir)
             shutil.copy2(op.join(src_dir, src_rfn), dest_fn)
 
     if options.move_dir is not None:
-        #if not op.exists(options.move_dir):
-        #    os.makedirs(options.move_dir)
 
         logger.info('Move %d files from %s to %s', len(imported_rfns), src_dir, options.move_dir)
         for src_rfn in tqdm(imported_rfns):
             dest_fn = op.join(options.move_dir, src_rfn)
-            #dest_dir = op.dirname(dest_fn)
-            #if not op.exists(options.dest_dir):
-            #    os.makedirs(options.dest_dir)
+            dest_dir = op.dirname(dest_fn)
+            if not op.exists(dest_dir):
+               os.makedirs(dest_dir)
             shutil.move(op.join(src_dir, src_rfn), dest_fn)
 
 if __name__ == '__main__':

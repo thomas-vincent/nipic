@@ -22,7 +22,6 @@ pv.global_theme.transparent_background = True
 from scipy import ndimage as ndi
 from scipy.spatial.distance import pdist
 
-logging.basicConfig()
 logger = logging.getLogger('nipic')
 
 def norm01(arr):
@@ -95,11 +94,17 @@ def lut_to_str(lut):
         lines.append(f'{idx}\t{name}\t{r}\t{g}\t{b}\t{a}')
     return '\n'.join(lines)
 
+from IPython import embed
+
+def touch(fn):
+    with open(fn, 'w') as fout:
+        pass
+
 class Freesurfer:
 
     def __init__(self, fs_home=None, subject_dir=None):
         self.home = (fs_home if fs_home is not None
-                        else os.getenv('FREESURFER_HOME'))
+                     else os.getenv('FREESURFER_HOME'))
         if len(self.home) == 0:
             raise Exception('FREESURFER_HOME env variable not found. ' \
                             'Make sure to source SetUpFreeSurfer.sh or '\
@@ -116,15 +121,85 @@ class Freesurfer:
 
         self.tmp_dir = tempfile.mkdtemp()
 
+    def compute_vol_stats(self, subjects, parcellation='aparc+aseg',
+                          measure='volume', overwrite=False):
+
+        for subject in subjects:
+            parcellation_vol_fn = self.mri_fn(subject, parcellation + '.mgz')
+            parcellation_stats_fn = self.stats_fn(subject, parcellation + '.stats')
+            if not op.exists(parcellation_stats_fn) or overwrite:
+                running_marker_fn = self.scripts_fn(subject, 'mri_segstats_running')
+                if not op.exists(running_marker_fn):
+                    logger.info('%s.mgz for subject %s does not exists, run mri_segstats',
+                                parcellation, subject)
+                    cmd = ['mri_segstats', '--seed', '1234', '--seg', parcellation_vol_fn,
+                           '--sum', parcellation_stats_fn,
+                           '--pv', self.mri_fn(subject, 'norm.mgz'),
+                           '--brainmask', self.mri_fn(subject, 'brainmask.mgz'),
+                           '--brain-vol-from-seg',
+                           '--excludeid', '0', '--supratent', '--subcortgray',
+                           '--in', self.mri_fn(subject, 'norm.mgz'),
+                           '--in-intensity-name', 'norm', '--in-intensity-units', 'MR',
+                           '--etiv', '--surf-wm-vol', '--surf-ctx-vol', '--totalgray', '--euler',
+                           '--ctab', op.join(self.home, 'FreeSurferColorLUT.txt'),
+                           '--subject', subject]
+                    touch(running_marker_fn)
+                    self.run_cmd(cmd, running_marker_fn)
+                else:
+                    logger.info('Skip %s because mri_segstats already running (%s).',
+                                subject, running_marker_fn)
+
+        # tmp_dir = tempfile.mkdtemp()
+        # tmp_table_fn = op.join(tmp_dir, 'fs_table.txt')
+        # dfs = []
+        # for side in ('rh', 'lh'):
+        #     cmd = ( ['aparcstats2table', '--subjects'] + subjects +
+        #             ['--hemi', side, '--measure', measure,
+        #              '--parc', parcellation, '--tablefile', tmp_table_fn] )
+        #     self.run_cmd(cmd)
+        #     df = pd.read_csv(tmp_table_fn, delimiter='\t')
+        #     df = df.rename(columns={df.columns[0] : 'fs_subject_ID'})
+        #     df = df.set_index('fs_subject_ID')
+        #     df = df[[c for c in df.columns if c.startswith(side)]]
+        #     # Add ctx prefix but regions may come from WM parcellation... TOCHECK
+        #     df.columns = ['ctx-' + c + df.columns.str.removesuffix('_volume')
+        #     dfs.append(df)
+
+        # all_stats_df = pd.concat(dfs, axis=1)
+        # embed()
+
+    def all_stats_seg_to_df(self, subjects, segmentation_label='aparc+aseg',
+                            struct_names=None, struct_stats=None,
+                            measure_labels=None, column_prefix=None,
+                            output_file=None):
+        to_concat = [self.stat_seg_to_df(s, segmentation_label=segmentation_label,
+                                         struct_names=struct_names,
+                                         struct_stats=struct_stats,
+                                         measure_labels=measure_labels)
+                     for s in subjects]
+        stats = pd.concat((e for e in to_concat if e is not None), axis=0,
+                          join='outer')
+
+        if column_prefix is not None:
+            stats = stats.add_prefix(options)
+
+        if output_file is not None:
+            logger.info('Stats table with %d rows and %d columns saved to %s',
+                        stats.shape[0], stats.shape[1], output_file)
+            (stats.sort_index().reset_index().to_excel(output_file, index=False))
+
+        return stats
 
     def stat_seg_to_df(self, subject, segmentation_label='aseg',
                        struct_names=None, struct_stats=None,
-                       measure_labels=None, normalise_by_eTIV=False):
+                       measure_labels=None):
 
         stat_fn = self.stats_fn(subject, segmentation_label + '.stats')
         if not op.exists(stat_fn):
             logger.error('No stat file found for %s: %s', subject,  stat_fn)
-            return None
+            # return None
+            raise FileNotFoundError(stat_fn)
+
         with open(stat_fn) as fin:
             content = fin.read()
 
@@ -136,7 +211,7 @@ class Freesurfer:
             return su
 
         measures = pd.DataFrame({'subject' : [subject]})
-        eTIV = None
+        s_measure_labels = set(measure_labels) if measure_labels is not None else None
         for measure_line in MEASURE_RE.findall(content):
             # # Measure BrainSeg, BrainSegVol, Brain Segmentation Volume, 1109112.000000, mm^3
             _, ml, ll, m, mu = [e.strip() for e in measure_line.replace('# Measure ', '').split(',')]
@@ -144,20 +219,31 @@ class Freesurfer:
                 m = int(m)
             else:
                 m = float(m)
-            if measure_labels is None or ml in measure_labels:
+            if s_measure_labels is None or ml in s_measure_labels:
                 measures[ml + safe_unit_suffix(mu)] = m
+                if s_measure_labels is not None:
+                    s_measure_labels.remove(ml)
 
-            if ml == 'eTIV':
-                eTIV = m
+        if s_measure_labels is not None and len(s_measure_labels) > 0:
+            logger.error('Measure(s) not found: %s', ', '.join(sorted(s_measure_labels)))
+            raise ValueError('Some measures were not found')
         measures.set_index('subject', inplace=True)
-        logger.info('Loaded measures:')
-        logger.info(measures)
+        logger.debug('Loaded measures:')
+        logger.debug(measures)
+
+        stats_units = re.findall(content, '# TableCols+(\d)\s+Units\s+(.*)')
 
         stats_table_str = STATS_TABLE_RE.findall(content)[0].replace('# ColHeaders', '')
         lines = stats_table_str.split('\n')
         header = lines[0].strip().split(' ')
         stats = pd.read_csv(io.StringIO('\n'.join(lines[1:])), header=None,
                             delim_whitespace=True)
+
+        idx_to_col = dict(re.findall('TableCol\s+(\d+)\s+ColHeader\s+(.*)', content,
+                                 flags=re.MULTILINE))
+        col_units = {idx_to_col[i]:u for i,u in re.findall('TableCol\s+(\d+)\s+Units\s+(.*)', content,
+                                                           flags=re.MULTILINE)}
+
         nb_locations = len(stats)
 
         stats.columns = header
@@ -167,22 +253,25 @@ class Freesurfer:
         if struct_stats is not None:
             stats = stats[['StructName'] + struct_stats]
 
-        if eTIV is not None and normalise_by_eTIV:
-            for col in stats.columns:
-                if col != 'StructName':
-                    stats[col + '-to-eTIV'] = stats[col] / eTIV
-
         if struct_names is not None:
             stats = stats[stats['StructName'].isin(struct_names)]
 
-        logger.info('Kept structures') # TODO
-        logger.info(stats.StructName)
+        logger.debug('Kept structures') # TODO
+        logger.debug(stats.StructName)
 
-        stats = stats.set_index('StructName').stack().to_frame()
-        if stats.shape[0] != nb_locations:
-            stats.index = ['_'.join(col) for col in stats.index.values]
-        else:
-            stats.index = stats.index.droplevel(1)
+        stats = stats.set_index('StructName')
+
+        # new_cols = [c + '_' + col_units[c] if col_units[c] not in {'NA', 'unitless'} else c
+        #            for c in stats.columns]
+
+        # stats.columns = new_cols
+
+        stats = stats.stack().to_frame()
+        #if stats.shape[0] != nb_locations:
+        stats.index = ['_'.join(col) for col in stats.index.values]
+        #else:
+        #    stats.index = stats.index.droplevel(1)
+
 
         stats = stats.T
         stats['subject'] = [subject]
@@ -194,7 +283,8 @@ class Freesurfer:
                                 segmentation_label='aseg'):
         pass
 
-    def stat_seg_measure_regional(self, measure_label, struct_names=None, subject_names=None, segmentation_label='aseg'):
+    def stat_seg_measure_regional(self, measure_label, struct_names=None,
+                                  subject_names=None, segmentation_label='aseg'):
         pass
 
     def auto_angio_lesions(self, subject_name, save_figures=False):
@@ -473,6 +563,14 @@ class Freesurfer:
         return op.join(self.subject_dir(subject_name), 'mri',
                        volume_bfn)
 
+    def mri_orig_fn(self, subject_name, volume_bfn):
+        return op.join(self.subject_dir(subject_name), 'mri', 'orig',
+                       volume_bfn)
+
+    def transform_fn(self, subject_name, transform_bfn):
+        return op.join(self.subject_dir(subject_name), 'mri', 'transforms',
+                       transform_bfn)
+
     def label_fn(self, subject_name, label_bfn):
         return op.join(self.subject_dir(subject_name), 'label',
                        label_bfn)
@@ -498,6 +596,11 @@ class Freesurfer:
         return op.join(ensure_dir_exists(op.join(self.subject_dir(subject_name),
                                                  'stats')),
                        stats_bfn)
+
+    def scripts_fn(self, subject_name, script_bfn):
+        return op.join(ensure_dir_exists(op.join(self.subject_dir(subject_name),
+                                                 'scripts')),
+                       script_bfn)
 
     def subjects(self):
         subjects = []
@@ -561,7 +664,8 @@ class Freesurfer:
         else:
             logger.info('Aseg graph already exists')
 
-    def run_cmd(self, cmd):
+    def run_cmd(self, cmd, fn_to_cleanup=None):
+        logger.debug('Run %s', ' '.join(cmd))
         if sys.version_info[0] < 3:
             result = Dummy()
             result.returncode = subprocess.call(cmd)
@@ -569,7 +673,12 @@ class Freesurfer:
             result = subprocess.run(cmd)
         if result.returncode != 0:
             msg = 'Error running command %s' % ' '.join(cmd)
+            if fn_to_cleanup is not None and op.exists(fn_to_cleanup):
+                os.remove(fn_to_cleanup)
             raise RuntimeError(msg)
+
+        if fn_to_cleanup is not None and op.exists(fn_to_cleanup):
+            os.remove(fn_to_cleanup)
 
 
 class TestSmoothing(unittest.TestCase):
