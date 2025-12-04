@@ -9,6 +9,7 @@ import shutil
 import re
 import colorsys
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 from subprocess import call
 
@@ -22,7 +23,6 @@ import pandas as pd
 import numpy as np
 
 import nibabel as nib
-import dipy
 
 MRI_3D_AXES = ['sagittal', 'coronal', 'axial']
 NIBABEL_SLICER_VIEWS = ['sagittal', 'coronal', 'axial']
@@ -71,6 +71,7 @@ def load_mri(mri_fn):
     bfn = split_ext_gz_safe(mri_fn)[0]
     img = nib.load(mri_fn)
     if op.exists(bfn + '.bval') and op.exists(bfn + '.bvec'):
+        import dipy
         # DTI data -> load gradient table data
         img.extra['grad_table'], img.extra['b_values'] = \
             dipy.io.read_bvec_file(bfn)
@@ -337,12 +338,48 @@ def draw_vol_mapping(values_to_map, region_template_fn, t1_template_fn,
 
         for irow in range(rows):
             for icol in range(cols):
-                sub_figure_fn = op.join(tmp_dir, 'brain_regions_r%02d_c%02d.png' %(irow, icol))
-                plot_img(out_img, bg_img=nib.load(t1_template_fn), display_mode='y',
+                sub_figure_fn = op.join(tmp_dir,
+                                        'brain_regions_r%02d_c%02d.png' %
+                                        (irow, icol))
+                plot_img(out_img, bg_img=nib.load(t1_template_fn),
+                         display_mode='y',
                          cut_coords=[cuts[icut]], output_file=sub_figure_fn,
                          colorbar=False, threshold=0,
                          black_bg=True, vmin=vmin, vmax=vmax, cmap=color_map)
                 icut += 1
+
+        ms = plt.matshow(np.array([[vmin, vmax]]), cmap=color_map)
+        fig, ax = plt.subplots(figsize=(2,3))
+        if vmin < 0 and vmax > 0:
+            ticks = [vmin, 0, vmax]
+        else:
+            ticks = [vmin, vmin + abs(vmin/2), vmax/2 - abs(vmax/2), vmax]
+        class MyFormatter(mpl.ticker.Formatter):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+            def __call__(self, x, pos=None):
+                abx = abs(x)
+                if abx < 1:
+                    fmt = '%1.2f' 
+                elif abx < 10:
+                    fmt = '%1.2f'
+                elif abx < 100:
+                    fmt = '%1.1f'
+                else:
+                    fmt = '%1.0f'
+                if x >= 0:
+                    fmt = '$\quad$' + fmt
+                return fmt % x
+        cbar = plt.colorbar(ms, ticks=ticks, ax=ax,
+                            format=MyFormatter())
+        # embed()
+        for tick in cbar.ax.yaxis.get_major_ticks():
+            tick.label.set_family('monospace')
+            tick.label1.set_family('monospace')
+            tick.label2.set_family('monospace')
+        ax.remove()
+        r,ext = op.splitext(figure_fn)
+        plt.savefig(r + '_colorbar' + ext, bbox_inches='tight')
 
         cmd = ['inkscape', tmp_svg_fn, '--export-png=%s' % figure_fn]
         subprocess.check_output(cmd)
