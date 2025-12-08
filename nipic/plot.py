@@ -154,7 +154,7 @@ import hashlib
 def hash_pandas_whole_object(obj):
     return hashlib.sha1(hash_pandas_object(obj).values).hexdigest()
 
-brain_region_template_svg = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+brain_region_template_with_colbar_svg = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
 
 <svg
@@ -166,9 +166,9 @@ brain_region_template_svg = """<?xml version="1.0" encoding="UTF-8" standalone="
    xmlns:xlink="http://www.w3.org/1999/xlink"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   width="223.52757mm"
+   width="244.33821mm"
    height="122.6767mm"
-   viewBox="0 0 223.52757 122.6767"
+   viewBox="0 0 244.33821 122.6767"
    version="1.1"
    id="svg8"
    inkscape:version="0.92.5 (2060ec1f9f, 2020-04-08)"
@@ -183,8 +183,8 @@ brain_region_template_svg = """<?xml version="1.0" encoding="UTF-8" standalone="
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
      inkscape:zoom="0.98994949"
-     inkscape:cx="459.79204"
-     inkscape:cy="286.96775"
+     inkscape:cx="798.63228"
+     inkscape:cy="475.99521"
      inkscape:document-units="mm"
      inkscape:current-layer="layer1"
      showgrid="false"
@@ -214,78 +214,239 @@ brain_region_template_svg = """<?xml version="1.0" encoding="UTF-8" standalone="
      inkscape:groupmode="layer"
      id="layer1"
      transform="translate(253.85593,-123.54208)">
+    <rect
+       style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.35268956;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       id="rect903"
+       width="244.33821"
+       height="122.6767"
+       x="-253.85593"
+       y="123.54208"
+       ry="0" />
     <image
        sodipodi:absref=""
        xlink:href="brain_regions_r01_c00.png"
-       y="179.62534"
-       x="-253.8723"
-       id="image867"
-       preserveAspectRatio="none"
+       width="55.880001"
        height="76.199997"
-       width="55.880001" />
+       preserveAspectRatio="none"
+       id="image867"
+       x="-253.8723"
+       y="179.62534" />
     <image
        sodipodi:absref=""
        xlink:href="brain_regions_r01_c01.png"
-       y="179.62534"
-       x="-197.99229"
-       id="image878"
-       preserveAspectRatio="none"
+       width="55.880001"
        height="76.199997"
-       width="55.880001" />
+       preserveAspectRatio="none"
+       id="image878"
+       x="-197.99229"
+       y="179.62534" />
     <image
        sodipodi:absref=""
        xlink:href="brain_regions_r01_c02.png"
-       y="179.62534"
-       x="-142.11229"
-       id="image889"
-       preserveAspectRatio="none"
+       width="55.880001"
        height="76.199997"
-       width="55.880001" />
+       preserveAspectRatio="none"
+       id="image889"
+       x="-142.11229"
+       y="179.62534" />
     <image
        sodipodi:absref=""
        xlink:href="brain_regions_r01_c03.png"
-       y="179.62534"
-       x="-86.232285"
-       id="image900"
-       preserveAspectRatio="none"
+       width="55.880001"
        height="76.199997"
-       width="55.880001" />
+       preserveAspectRatio="none"
+       id="image900"
+       x="-86.232285"
+       y="179.62534" />
     <image
        sodipodi:absref=""
        xlink:href="brain_regions_r00_c00.png"
-       y="116.1511"
-       x="-253.83551"
-       id="image823"
-       preserveAspectRatio="none"
+       width="55.880001"
        height="76.199997"
-       width="55.880001" />
+       preserveAspectRatio="none"
+       id="image823"
+       x="-253.83551"
+       y="116.1511" />
     <image
        sodipodi:absref=""
        xlink:href="brain_regions_r00_c01.png"
-       y="116.1511"
-       x="-197.95551"
-       id="image834"
-       preserveAspectRatio="none"
+       width="55.880001"
        height="76.199997"
-       width="55.880001" />
+       preserveAspectRatio="none"
+       id="image834"
+       x="-197.95551"
+       y="116.1511" />
     <image
        sodipodi:absref=""
        xlink:href="brain_regions_r00_c02.png"
-       y="116.1511"
-       x="-142.0755"
-       id="image845"
-       preserveAspectRatio="none"
+       width="55.880001"
        height="76.199997"
-       width="55.880001" />
+       preserveAspectRatio="none"
+       id="image845"
+       x="-142.0755"
+       y="116.1511" />
     <image
        sodipodi:absref=""
        xlink:href="brain_regions_r00_c03.png"
-       y="116.1511"
-       x="-86.195496"
-       id="image856"
-       preserveAspectRatio="none"
+       width="55.880001"
        height="76.199997"
-       width="55.880001" />
+       preserveAspectRatio="none"
+       id="image856"
+       x="-86.195496"
+       y="116.1511" />
+    <image
+       sodipodi:absref=""
+       xlink:href="colorbar.png"
+       width="21.082001"
+       height="102.362"
+       preserveAspectRatio="none"
+       id="image829"
+       x="-30.374311"
+       y="134.93956" />
+  </g>
+</svg>
+"""
+
+brain_region_template_no_colbar_svg = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="223.50821mm"
+   height="122.6767mm"
+   viewBox="0 0 223.50821 122.6767"
+   version="1.1"
+   id="svg8"
+   inkscape:version="0.92.5 (2060ec1f9f, 2020-04-08)"
+   sodipodi:docname="region_plot_template_no_colbar.svg">
+  <defs
+     id="defs2" />
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageopacity="0.0"
+     inkscape:pageshadow="2"
+     inkscape:zoom="0.98994949"
+     inkscape:cx="496.13506"
+     inkscape:cy="96.400106"
+     inkscape:document-units="mm"
+     inkscape:current-layer="layer1"
+     showgrid="false"
+     inkscape:window-width="2560"
+     inkscape:window-height="1354"
+     inkscape:window-x="0"
+     inkscape:window-y="29"
+     inkscape:window-maximized="1"
+     fit-margin-top="0"
+     fit-margin-left="0"
+     fit-margin-right="0"
+     fit-margin-bottom="0" />
+  <metadata
+     id="metadata5">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(253.85593,-123.54208)">
+    <rect
+       style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.35268956;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       id="rect903"
+       width="223.50821"
+       height="122.6767"
+       x="-253.85593"
+       y="123.54208"
+       ry="0" />
+    <image
+       sodipodi:absref=""
+       xlink:href="brain_regions_r01_c00.png"
+       width="55.880001"
+       height="76.199997"
+       preserveAspectRatio="none"
+       id="image867"
+       x="-253.8723"
+       y="179.62534" />
+    <image
+       sodipodi:absref=""
+       xlink:href="brain_regions_r01_c01.png"
+       width="55.880001"
+       height="76.199997"
+       preserveAspectRatio="none"
+       id="image878"
+       x="-197.99229"
+       y="179.62534" />
+    <image
+       sodipodi:absref=""
+       xlink:href="brain_regions_r01_c02.png"
+       width="55.880001"
+       height="76.199997"
+       preserveAspectRatio="none"
+       id="image889"
+       x="-142.11229"
+       y="179.62534" />
+    <image
+       sodipodi:absref=""
+       xlink:href="brain_regions_r01_c03.png"
+       width="55.880001"
+       height="76.199997"
+       preserveAspectRatio="none"
+       id="image900"
+       x="-86.232285"
+       y="179.62534" />
+    <image
+       sodipodi:absref=""
+       xlink:href="brain_regions_r00_c00.png"
+       width="55.880001"
+       height="76.199997"
+       preserveAspectRatio="none"
+       id="image823"
+       x="-253.83551"
+       y="116.1511" />
+    <image
+       sodipodi:absref=""
+       xlink:href="brain_regions_r00_c01.png"
+       width="55.880001"
+       height="76.199997"
+       preserveAspectRatio="none"
+       id="image834"
+       x="-197.95551"
+       y="116.1511" />
+    <image
+       sodipodi:absref=""
+       xlink:href="brain_regions_r00_c02.png"
+       width="55.880001"
+       height="76.199997"
+       preserveAspectRatio="none"
+       id="image845"
+       x="-142.0755"
+       y="116.1511" />
+    <image
+       sodipodi:absref=""
+       xlink:href="brain_regions_r00_c03.png"
+       width="55.880001"
+       height="76.199997"
+       preserveAspectRatio="none"
+       id="image856"
+       x="-86.195496"
+       y="116.1511" />
   </g>
 </svg>"""
 
@@ -295,7 +456,8 @@ import nibabel as nib
 
 def draw_vol_mapping(values_to_map, region_template_fn, t1_template_fn,
                      cache_dir=None, output_vol_fn=None, figure_fn=None,
-                     vmin=None, vmax=None, color_map=None, colorbar_label=None,
+                     vmin=None, vmax=None, color_map=None,
+                     colorbar=True, colorbar_label=None,
                      ignore_regions_not_in_template=False):
 
     def _forge_volume():
@@ -353,17 +515,35 @@ def draw_vol_mapping(values_to_map, region_template_fn, t1_template_fn,
 
     # transparency_img = nib.Nifti1Image(out_transparency, template_img.affine)
 
+    plt.style.use('dark_background')
+
     rows = 2
     cols = 4
     cuts = np.linspace(-93,63, rows*cols)
 
     icut = 0
-    logger.info('Plot brain snippets (vmin=%1.3f, vmax=%1.3f)',
-                vmin, vmax)
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_svg_fn = op.join(tmp_dir, 'region_plot_template.svg')
         with open(tmp_svg_fn, 'w') as fout:
-            fout.write(brain_region_template_svg)
+            if colorbar:
+                fout.write(brain_region_template_with_colbar_svg)
+            else:
+                fout.write(brain_region_template_no_colbar_svg)
+
+        if colorbar:
+            logger.info('Plot colorbar')
+            fig,ax = plt.subplots()
+            cbar_norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax, clip=False)
+            cbar = fig.colorbar(mpl.cm.ScalarMappable(norm=cbar_norm, cmap=color_map), ax=ax)
+
+            if colorbar_label is not None:
+                cbar.ax.set_ylabel(colorbar_label)
+            ax.remove()
+
+            plt.savefig(op.join(tmp_dir, 'colorbar.png'), bbox_inches='tight')
+
+        logger.info('Plot brain snippets (vmin=%1.3f, vmax=%1.3f)',
+                    vmin, vmax)
 
         for irow in range(rows):
             for icol in range(cols):
