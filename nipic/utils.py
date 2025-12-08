@@ -9,6 +9,7 @@ import shutil
 import re
 import colorsys
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 from subprocess import call
 
@@ -17,7 +18,7 @@ import logging
 import pandas as pd
 import numpy as np
 
-import dipy
+import nibabel as nib
 
 MRI_3D_AXES = ['sagittal', 'coronal', 'axial']
 NIBABEL_SLICER_VIEWS = ['sagittal', 'coronal', 'axial']
@@ -130,6 +131,7 @@ def load_mri(mri_fn):
     bfn = split_ext_gz_safe(mri_fn)[0]
     img = nib.load(mri_fn)
     if op.exists(bfn + '.bval') and op.exists(bfn + '.bvec'):
+        import dipy
         # DTI data -> load gradient table data
         img.extra['grad_table'], img.extra['b_values'] = \
             dipy.io.read_bvec_file(bfn)
@@ -178,5 +180,3 @@ def df_save_excel(dfs, fn, index=True):
             worksheet.set_column(idx, idx, max_len)  # set column width
 
     writer.close()
-
-

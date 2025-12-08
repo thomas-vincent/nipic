@@ -29,6 +29,9 @@ def origin_dir(running_dir=None):
 def analysis_dir(running_dir=None):
     return op.join(tier_root(running_dir=running_dir), 'data_analysis')
 
+def doc_dir(running_dir=None):
+    return op.join(tier_root(running_dir=running_dir), 'doc')
+
 import tempfile
 import unittest
 import shutil
