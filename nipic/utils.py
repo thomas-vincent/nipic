@@ -26,6 +26,12 @@ NIBABEL_SLICER_VIEWS = ['sagittal', 'coronal', 'axial']
 #logging.basicConfig(stream=sys.stdout)
 logger = logging.getLogger('nipic')
 
+def if_none(v, default):
+    return v if v is not None else default
+
+def if_nan(v, default):
+    return v if not np.isnan(v) else default
+
 def two_intervals_intersection(i_a, i_b):
     if i_a is None or i_b is None:
         raise ValueError("Intervals cannot be None")
@@ -181,15 +187,23 @@ def df_save_excel(dfs, fn, index=True):
 
     writer.close()
 
-def max_neg_value(a):
-    a = np.array(a)
-    return a[np.where(a<=0, a, -np.nan).argmax()]
-
 from IPython import embed
-def min_pos_value(a):
+import warnings
+
+def _filter_and_apply(a, predicate_func, proc_func):
+    if len(a)==0:
+        return np.nan
     a = np.array(a)
-    embed()
-    return a[np.where(a>=0, a, np.inf).argmin()]
+    with warnings.catch_warnings():
+        warnings.filterwarnings(action='ignore', message='All-NaN slice encountered')
+        m = proc_func(np.where(predicate_func(a), a, np.nan))
+    return m
+
+def max_neg_value(a):
+    return _filter_and_apply(a, lambda x: x<=0, np.nanmax)
+
+def min_pos_value(a):
+    return _filter_and_apply(a, lambda x: x>=0, np.nanmin)
 
 class TestMaxPosNegValue(unittest.TestCase):
     def setUp(self):
@@ -205,5 +219,19 @@ class TestMaxPosNegValue(unittest.TestCase):
     def test_neg(self):
         self.assertEqual(max_neg_value([-7, -5, -10, -9]), -5)
 
+    def test_neg_pos(self):
+        self.assertEqual(max_neg_value([1, 4, -7, -5, -10, -9]), -5)
+        self.assertEqual(min_pos_value([7, 1, 4, -7, -5, -10, -9]), 1)
+
     def test_pos(self):
         self.assertEqual(min_pos_value([7, 5, 10, 9]), 5)
+
+    def test_empty(self):
+        self.assertTrue(np.isnan(max_neg_value([])))
+        self.assertTrue(np.isnan(min_pos_value([])))
+
+    def test_nan(self):
+        self.assertEqual(min_pos_value([np.nan, 5, 10, 9]), 5)
+        self.assertEqual(max_neg_value([-7, -5, np.nan, -9]), -5)
+        self.assertTrue(np.isnan(max_neg_value([np.nan, np.nan,])))
+        self.assertTrue(np.isnan(min_pos_value([np.nan, np.nan,])))

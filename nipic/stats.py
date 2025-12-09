@@ -194,13 +194,18 @@ def mediation(data, predictor, mediators, outcome, output_dir=None, covariates=N
         f.format = 'svg'
         f.render(directory=output_dir)
 
+        med.loc['Indirect', 'coef_pct'] = ( med.loc['Indirect', 'coef'] /
+                                            med.loc['Total c', 'coef'] ) * 100
+        med.loc['Direct', 'coef_pct'] = ( med.loc["Direct c_prime", 'coef'] /
+                                          med.loc['Total c', 'coef'] ) * 100
+
     med = med.rename({
-        'Direct' : 'Direct c_prime',
-        'Total' : 'Total c'}
+        'Direct' : 'Direct',
+        'Total' : 'Total'}
     )
 
-    print(med.drop(columns=['pval_stars']))
-    print()
+    #print(med.drop(columns=['pval_stars']))
+    #print()
 
     return med
 

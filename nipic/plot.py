@@ -13,23 +13,30 @@ from numpy.testing import assert_allclose
 import logging
 logger = logging.getLogger('nipic')
 
-from .utils import two_intervals_intersection
+from .utils import two_intervals_intersection, if_none, if_nan, min_pos_value, max_neg_value
 
-def two_thresh_cmap(vmin, vmax, col_vmin, col_vmax,
-                    col_thresh_neg, col_thresh_pos,
+def two_thresh_cmap(vmin, vmax, col_vmin=None, col_vmax=None,
+                    col_thresh_neg=None, col_thresh_pos=None,
                     vthresh_neg=0.0, vthresh_pos=0.0,
                     col_center=None, clip=False, N=256):
 
     assert(vthresh_neg is not None)
     assert(vthresh_pos is not None)
-    assert(vthresh_pos >= 0)
-    assert(vthresh_neg <= 0)
+    if vthresh_pos < 0:
+        raise ValueError('vthresh_pos not positive (%f)' % vthresh_pos)
+    if vthresh_neg > 0:
+        raise ValueError('vthresh_neg not negative (%f)' % vthresh_neg)
 
-    if col_center is None:
-        col_center = np.array([125, 125, 125, 255]) / 255 # gray
+    col_vmin = if_none(col_vmin, np.array([0.0, 0.0, 1.0, 1.0]))
+    col_thresh_neg = if_none(col_thresh_neg, np.array([0.5, 1.0, 1.0, 1.0]))
+    col_thresh_pos = if_none(col_thresh_pos, np.array([1.0, 1.0, 0.5, 1.0]))
+    col_vmax = if_none(col_vmax, np.array([1.0, 0, 0, 1.0]))
+    col_center = if_none(col_center, np.array([0.5, 0.5, 0.5, 1.0]))
 
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax, clip=clip)
 
+    logger.debug('Compute gray interval from vmin=%f, vmax=%f, vthresh_neg=%f, vthresh_pos=%f',
+                 vmin, vmax, vthresh_neg, vthresh_pos)
     i_gray = norm(two_intervals_intersection((vmin, vmax),
                                              (vthresh_neg, vthresh_pos)))
 
@@ -454,9 +461,14 @@ from .freesurfer import load_lut
 from nilearn.plotting import plot_img
 import nibabel as nib
 
+from IPython import embed
 def draw_vol_mapping(values_to_map, region_template_fn, t1_template_fn,
                      cache_dir=None, output_vol_fn=None, figure_fn=None,
-                     vmin=None, vmax=None, color_map=None,
+                     vmin=None, vmax=None,
+                     col_vmin=None, col_vmax=None,
+                     use_double_threshold=True,
+                     vthresh_neg=None, vthresh_pos=None,
+                     col_thresh_neg=None, col_thresh_pos=None,
                      colorbar=True, colorbar_label=None,
                      ignore_regions_not_in_template=False):
 
@@ -480,7 +492,8 @@ def draw_vol_mapping(values_to_map, region_template_fn, t1_template_fn,
                     out_data[region_mask] = 0
                 else:
                     out_data[region_mask] = value
-        return  nib.Nifti1Image(out_data, template_img.affine)
+        img = nib.Nifti1Image(out_data, template_img.affine)
+        return img
 
     if cache_dir is not None:
         values_hash_str = hash_pandas_whole_object(values_to_map.sort_index())
@@ -494,24 +507,31 @@ def draw_vol_mapping(values_to_map, region_template_fn, t1_template_fn,
     else:
         out_img = _forge_volume()
 
+    if output_vol_fn is not None:
+        nib.save(out_img, output_vol_fn)
+
+    def masked_fdata(self):
+        fdata = self.get_fdata()
+        return np.ma.masked_where(np.isnan(fdata), fdata)
+    out_img.get_fdata = masked_fdata
+
     if vmin is None:
         vmin = values_to_map.min()
 
     if vmax is None:
         vmax = values_to_map.max()
 
-    if output_vol_fn is not None:
-        nib.save(out_img, output_vol_fn)
+    if use_double_threshold:
+        if vthresh_neg is None:
+            vthresh_neg = if_nan(max_neg_value(values_to_map), 0.0)
+        if vthresh_pos is None:
+            vthresh_pos = if_nan(min_pos_value(values_to_map), 0.0)
+    else:
+        vthresh_neg, vthresh_pos = 0.0, 0.0
 
-    if color_map is None:
-        if vmin < 0 and vmax > 0:
-            color_map = mpl.colormaps['bwr']
-        elif vmax <= 0:
-            color_map = mpl.colormaps['winter']
-        elif vmin >= 0:
-            color_map = mpl.colormaps['autumn']
-        else:
-            color_map = mpl.colormaps['jet']
+    color_map, norm = two_thresh_cmap(vmin, vmax, col_vmin=col_vmin, col_vmax=col_vmax,
+                                      col_thresh_neg=col_thresh_neg, col_thresh_pos=col_thresh_pos,
+                                      vthresh_neg=vthresh_neg, vthresh_pos=vthresh_pos)
 
     # transparency_img = nib.Nifti1Image(out_transparency, template_img.affine)
 
