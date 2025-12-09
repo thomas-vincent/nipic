@@ -180,3 +180,30 @@ def df_save_excel(dfs, fn, index=True):
             worksheet.set_column(idx, idx, max_len)  # set column width
 
     writer.close()
+
+def max_neg_value(a):
+    a = np.array(a)
+    return a[np.where(a<=0, a, -np.nan).argmax()]
+
+from IPython import embed
+def min_pos_value(a):
+    a = np.array(a)
+    embed()
+    return a[np.where(a>=0, a, np.inf).argmin()]
+
+class TestMaxPosNegValue(unittest.TestCase):
+    def setUp(self):
+        logging.basicConfig()
+        logger.setLevel(logging.DEBUG)
+
+    def test_no_pos(self):
+        self.assertTrue(np.isnan(min_pos_value([-5, -10])))
+
+    def test_no_neg(self):
+        self.assertTrue(np.isnan(max_neg_value([5, 10])))
+
+    def test_neg(self):
+        self.assertEqual(max_neg_value([-7, -5, -10, -9]), -5)
+
+    def test_pos(self):
+        self.assertEqual(min_pos_value([7, 5, 10, 9]), 5)
