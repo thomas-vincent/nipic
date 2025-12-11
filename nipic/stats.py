@@ -160,7 +160,8 @@ def mediation(data, predictor, mediators, outcome, output_dir=None, covariates=N
     tag = '%s_mediation_%s_%s' % (predictor, '-'.join(mediators), outcome)
     print(tag)
     try:
-        med = mediation_analysis(data=data, x=predictor, m=mediators, y=outcome, alpha=0.05,
+        med = mediation_analysis(data=data, x=predictor, m=mediators, y=outcome,
+                                 alpha=0.05,
                                  seed=42, covar=covariates).set_index('path')
     except:
         print('Error mediation')
@@ -194,15 +195,10 @@ def mediation(data, predictor, mediators, outcome, output_dir=None, covariates=N
         f.format = 'svg'
         f.render(directory=output_dir)
 
-        med.loc['Indirect', 'coef_pct'] = ( med.loc['Indirect', 'coef'] /
-                                            med.loc['Total c', 'coef'] ) * 100
-        med.loc['Direct', 'coef_pct'] = ( med.loc["Direct c_prime", 'coef'] /
-                                          med.loc['Total c', 'coef'] ) * 100
-
-    med = med.rename({
-        'Direct' : 'Direct',
-        'Total' : 'Total'}
-    )
+    med.loc['Indirect', 'coef_pct'] = ( med.loc['Indirect', 'coef'] /
+                                        med.loc['Total', 'coef'] ) * 100
+    med.loc['Direct', 'coef_pct'] = ( med.loc["Direct", 'coef'] /
+                                      med.loc['Total', 'coef'] ) * 100
 
     #print(med.drop(columns=['pval_stars']))
     #print()

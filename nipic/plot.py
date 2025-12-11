@@ -530,7 +530,8 @@ def draw_vol_mapping(values_to_map, region_template_fn, t1_template_fn,
         vthresh_neg, vthresh_pos = 0.0, 0.0
 
     color_map, norm = two_thresh_cmap(vmin, vmax, col_vmin=col_vmin, col_vmax=col_vmax,
-                                      col_thresh_neg=col_thresh_neg, col_thresh_pos=col_thresh_pos,
+                                      col_thresh_neg=col_thresh_neg,
+                                      col_thresh_pos=col_thresh_pos,
                                       vthresh_neg=vthresh_neg, vthresh_pos=vthresh_pos)
 
     # transparency_img = nib.Nifti1Image(out_transparency, template_img.affine)
