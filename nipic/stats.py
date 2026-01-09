@@ -1,12 +1,31 @@
 import os.path as op
 import statsmodels.api as sm
 from pingouin import mediation_analysis
+from scipy.stats import spearmanr
 
 import graphviz
 import matplotlib.pyplot as plt
 
 import pandas as pd
 import numpy as np
+
+from IPython import embed
+
+import logging
+logger = logging.getLogger('nipic')
+
+def orthogonalise(df, untouched_var, ortho_var):
+    m_na = pd.isna(df[[untouched_var, ortho_var]]).any(axis=1)
+    if m_na.any():
+        df = df[~m_na]
+
+    df = df.sort_values(untouched_var)
+    pred = sm.add_constant(df[untouched_var])
+    ols_model = sm.OLS(df[ortho_var], pred)
+    estimate = ols_model.fit()
+    ortho = df[ortho_var]
+    ortho.loc[~m_na] = estimate.resid
+    return ortho
 
 def linear_regression(df, predictor, outcome, covariables=None, interactions=None,
                       center_vars=None, show_std_coeffs=True, ylabel=None, xlabel=None, fig=None,
@@ -113,11 +132,39 @@ def linear_regression(df, predictor, outcome, covariables=None, interactions=Non
         fig.savefig(op.join(fig_dir, '%s_corr_%s_%s%s.png' %
                             (predictor, outcome, '_'.join(covariables), file_suffix)))
 
+    summary = str(estimate.summary()) # Must be run to compute diagnoses
     if report_dir is not None:
         summary_fn = op.join(report_dir, '%s_corr_%s_%s%s.txt' %
                              (predictor, outcome, '_'.join(covariables), file_suffix))
         with open(summary_fn, 'w') as fout:
-            fout.write(str(estimate.summary()))
+            fout.write(summary)
+
+    if estimate.condition_number > 100:
+        logger.warning('Condition number is high: %1.0f. Consider fixing multicollinearity.',
+                       estimate.condition_number)
+
+    if estimate.diagn['omnipv'] < 0.05:
+        logger.warning('Residual normality test failed: omni=%f, omni_pval=%f',
+                       estimate.diagn['omni'], estimate.diagn['omnipv'])
+
+    all_indep_vars = [predictor] + covariables
+    sp_corr, sp_val  = spearmanr(df[all_indep_vars])
+    print(sp_corr)
+    for i,covar in enumerate(all_indep_vars):
+        for j,covar2 in enumerate(all_indep_vars):
+            if i < j and abs(sp_corr[i,j]) >= 0.5:
+                logger.warning('Correlated indep. variables: %s, %s - sp_c=%1.3f, sp_pval=%1.4f',
+                               all_indep_vars[i], all_indep_vars[j], sp_corr[i,j], sp_val[i,j])
+
+    influence = estimate.get_influence()
+    dbetas = influence.summary_frame().filter(regex="dfb")
+    influence_threshold = 2.0 / df.shape[0] ** 0.5
+    for indep_var in all_indep_vars:
+        dfb_col = 'dfb_' + indep_var
+        m_influence = dbetas[dfb_col].abs() > influence_threshold
+        nb_influencial = m_influence.sum()
+        if  nb_influencial > 0:
+            logger.warning('Influencial obs (n=%d) for %s', nb_influencial, indep_var)
 
     b = estimate.params.rename('b')
     Beta = pd.Series({c:v*(df[c].std() if c !='const' else 1)
