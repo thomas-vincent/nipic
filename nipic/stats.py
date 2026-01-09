@@ -2,6 +2,7 @@ import os.path as op
 import statsmodels.api as sm
 from pingouin import mediation_analysis
 from scipy.stats import spearmanr
+from sklearn.decomposition import PCA
 
 import graphviz
 import matplotlib.pyplot as plt
@@ -14,21 +15,33 @@ from IPython import embed
 import logging
 logger = logging.getLogger('nipic')
 
-def orthogonalise(df, untouched_var, ortho_var):
-    m_na = pd.isna(df[[untouched_var, ortho_var]]).any(axis=1)
+def orthogonalise(df, untouched_var, ortho_var, keep_mean=False):
+    if isinstance(untouched_var, str):
+        untouched_var = [untouched_var]
+    m_na = pd.isna(df[untouched_var + [ortho_var]]).any(axis=1)
     if m_na.any():
         df = df[~m_na]
 
-    df = df.sort_values(untouched_var)
+    df = df.sort_values(ortho_var)
     pred = sm.add_constant(df[untouched_var])
     ols_model = sm.OLS(df[ortho_var], pred)
     estimate = ols_model.fit()
-    ortho = df[ortho_var]
-    ortho.loc[~m_na] = estimate.resid
-    return ortho
+    ortho_df = df[ortho_var].copy()
+    ortho = estimate.resid
+    # if 'Left-Lateral-Vent' in ortho_var:
+    #     embed()
+    if keep_mean:
+        ortho = (ortho - ortho.mean()) + df[ortho_var].mean()
+    ortho_df.loc[~m_na] = ortho
+    return ortho_df
 
 def linear_regression(df, predictor, outcome, covariables=None, interactions=None,
-                      center_vars=None, show_std_coeffs=True, ylabel=None, xlabel=None, fig=None,
+                      residualise=None,
+                      orthogonalise_covars=False,
+                      normalise_dep_var=False,
+                      normalise_indep_vars=False,
+                      show_std_coeffs=True,
+                      ylabel=None, xlabel=None, fig=None,
                       scatter_symbol='o', scatter_label=None, reg_color='r',
                       fig_dir=None, report_dir=None, file_suffix=''):
 
@@ -38,9 +51,6 @@ def linear_regression(df, predictor, outcome, covariables=None, interactions=Non
     if interactions is None:
         interactions = []
 
-    if center_vars is None:
-        center_vars = []
-
     if ylabel is None:
         ylabel = outcome
 
@@ -49,10 +59,11 @@ def linear_regression(df, predictor, outcome, covariables=None, interactions=Non
 
     df = df.copy()
 
-    for center_var in center_vars:
-        df[center_var] = df[center_var] - df[center_var].mean()
-
-    reg_vars = [predictor] + covariables
+    if normalise_indep_vars:
+        all_vars = [predictor] + covariables
+        pred_mean = df[all_vars].mean()
+        pred_std = df[all_vars].std()
+        df[all_vars] = (df[all_vars] - pred_mean) / pred_std
 
     interaction_vars = []
     for interaction in interactions:
@@ -60,10 +71,37 @@ def linear_regression(df, predictor, outcome, covariables=None, interactions=Non
         df[interaction_var] = df[interaction[0]] * df[interaction[1]]
         interaction_vars.append(interaction_var)
 
+    if residualise is not None:
+        if residualise == 'covars_on_predictor':
+            for c in covariables:
+                df[c] = orthogonalise(df, ortho_var=c, untouched_var=predictor)
+        elif residualise == 'predictor_on_covars':
+            df[predictor] = orthogonalise(df, ortho_var=predictor, untouched_var=covariables)
+        else:
+            raise ValueError(residualise)
+
+    reg_vars = [predictor]
+    if orthogonalise_covars:
+        pca = PCA(n_components=len(covariables), svd_solver='full')
+        ortho = pca.fit_transform(df[covariables])
+        covariables = []
+        for ipc in range(ortho.shape[1]):
+            pc_label = 'Covar_PC%d' % (ipc+1)
+            df[pc_label] = ortho[:, ipc]
+            covariables.append(pc_label)
+
+    # embed()
+    reg_vars = [predictor] + covariables
+
     m_na = pd.isna(df[[outcome] + reg_vars + interaction_vars]).any(axis=1)
     if m_na.any():
         print('WARNING: fitler %d rows because they contain nans' % m_na.sum())
         df = df[~m_na]
+
+    if normalise_dep_var:
+        outcome_mean = df[outcome].mean()
+        outcome_std = df[outcome].std()
+        df[outcome] = (df[outcome] - outcome_mean) / outcome_std
 
     df = df.sort_values(predictor)
 
@@ -146,9 +184,9 @@ def linear_regression(df, predictor, outcome, covariables=None, interactions=Non
     if estimate.diagn['omnipv'] < 0.05:
         logger.warning('Residual normality test failed: omni=%f, omni_pval=%f',
                        estimate.diagn['omni'], estimate.diagn['omnipv'])
-
     all_indep_vars = [predictor] + covariables
     sp_corr, sp_val  = spearmanr(df[all_indep_vars])
+    print(all_indep_vars)
     print(sp_corr)
     for i,covar in enumerate(all_indep_vars):
         for j,covar2 in enumerate(all_indep_vars):
@@ -172,10 +210,18 @@ def linear_regression(df, predictor, outcome, covariables=None, interactions=Non
                      name='Beta')
     t = estimate.tvalues.rename('t')
     p = estimate.pvalues.rename('p')
-    stats_df = pd.concat((b, Beta, t, p), axis=1)
+    b_scaled = b.copy()
+    if normalise_indep_vars:
+        b_scaled = b / pred_std
+    if normalise_dep_var:
+        b_scaled = b * outcome_std
+    b_scaled.name = 'b_rescaled'
+    stats_df = pd.concat((b, Beta, b_scaled, t, p), axis=1)
     stats_df.index.name = 'Variable'
 
-    return estimate, stats_df, fig
+    diagnoses = qc_normality, qc_condition # TODO
+
+    return estimate, stats_df, diagnoses, fig
 
 def plot_text_over_line(text, slope, position, va='bottom'):
     angle = np.rad2deg(np.arctan2(slope, 1))
