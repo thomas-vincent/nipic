@@ -82,6 +82,7 @@ def linear_regression(df, predictor, outcome, covariables=None, interactions=Non
         df[interaction_var] = df[interaction[0]] * df[interaction[1]]
         interaction_vars.append(interaction_var)
 
+
     if residualise is not None:
         if residualise == 'covars_on_predictor':
             for c in covariables:
@@ -165,9 +166,16 @@ def linear_regression(df, predictor, outcome, covariables=None, interactions=Non
     p = estimate.pvalues.rename('p')
     b_scaled = b.copy()
     if normalise_indep_vars:
-        b_scaled = b / pred_std
+        b_scaled = b.copy()
+        for variable, value in b_scaled.items():
+            if variable in pred_std.index:
+                b_scaled.loc[variable] = b_scaled.loc[variable] / pred_std.loc[variable]
+            else:
+                b_scaled.loc[variable] = pd.NA
+
     if normalise_dep_var:
         b_scaled = b * outcome_std
+
     b_scaled.name = 'b_rescaled'
     stats_df = pd.concat((b, Beta, b_scaled, t, p), axis=1)
     stats_df.index.name = 'Variable'
