@@ -239,8 +239,8 @@ brain_region_svg_templates[('2x4', 'with_colorbar')] = \
        preserveAspectRatio="none"
        height="102.362"
        width="21.082001"
-       xlink:href="/home/lesca/Dropbox/ACTIONcR_brain_morphometrics_VO2max_cognition/data_origin/region_plot_template/test_colorbar.png"
-       sodipodi:absref="/home/lesca/Dropbox/ACTIONcR_brain_morphometrics_VO2max_cognition/data_origin/region_plot_template/test_colorbar.png" />
+       xlink:href="colorbar.png"
+       sodipodi:absref="colorbar.png" />
     <image
        sodipodi:absref="brain_regions_s04.png"
        xlink:href="brain_regions_s04.png"
@@ -463,6 +463,7 @@ brain_region_svg_templates[('2x4', 'without_colorbar')] = \
 brain_region_svg_templates[('1x8', 'with_colorbar')] = \
 """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
+
 <svg
    xmlns:dc="http://purl.org/dc/elements/1.1/"
    xmlns:cc="http://creativecommons.org/ns#"
@@ -472,9 +473,9 @@ brain_region_svg_templates[('1x8', 'with_colorbar')] = \
    xmlns:xlink="http://www.w3.org/1999/xlink"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   width="462.73383mm"
-   height="76.199997mm"
-   viewBox="0 0 462.73382 76.199999"
+   width="458.72604mm"
+   height="54.609253mm"
+   viewBox="0 0 458.72604 54.609254"
    version="1.1"
    id="svg8"
    inkscape:version="0.92.5 (2060ec1f9f, 2020-04-08)"
@@ -488,9 +489,9 @@ brain_region_svg_templates[('1x8', 'with_colorbar')] = \
      borderopacity="1.0"
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
-     inkscape:zoom="0.49497475"
-     inkscape:cx="915.85706"
-     inkscape:cy="308.89245"
+     inkscape:zoom="2.8"
+     inkscape:cx="1532.867"
+     inkscape:cy="137.37458"
      inkscape:document-units="mm"
      inkscape:current-layer="layer1"
      showgrid="false"
@@ -519,16 +520,24 @@ brain_region_svg_templates[('1x8', 'with_colorbar')] = \
      inkscape:label="Layer 1"
      inkscape:groupmode="layer"
      id="layer1"
-     transform="translate(357.02301,-116.1511)">
+     transform="translate(357.02429,-128.36832)">
+    <rect
+       style="fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.35268956;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       id="rect844"
+       width="458.72604"
+       height="54.609253"
+       x="-357.02429"
+       y="128.36832"
+       ry="0.25793117" />
     <image
-       y="116.1511"
+       y="127.97025"
        x="90.017021"
        id="image829"
        preserveAspectRatio="none"
-       height="76.199997"
-       width="15.693796"
-       xlink:href="test_colorbar.png"
-       sodipodi:absref="test_colorbar.png" />
+       height="55.952267"
+       width="11.523668"
+       xlink:href="colorbar.png"
+       sodipodi:absref="colorbar.png" />
     <image
        sodipodi:absref="brain_regions_s04.png"
        xlink:href="brain_regions_s04.png"
@@ -602,7 +611,8 @@ brain_region_svg_templates[('1x8', 'with_colorbar')] = \
        height="76.199997"
        width="55.880001" />
   </g>
-</svg>"""
+</svg>
+"""
 from .freesurfer import load_lut
 from nilearn.plotting import plot_img
 import nibabel as nib
