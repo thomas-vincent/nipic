@@ -250,7 +250,7 @@ def linear_regression(df, predictor, outcome, covariables=None, interactions=Non
             fout.write(summary)
 
 
-    return estimate, stats_df, diagnoses, fig
+    return estimate, stats_df, diagnoses, fig, fig_diagn
 
 
 import seaborn as sns
