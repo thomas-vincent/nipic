@@ -130,7 +130,7 @@ def linear_regression(df, predictor, outcome, covariables=None, interactions=Non
     summary += '\nVIF:\n' + vif_table.to_string()
 
     if estimate.condition_number > 100:
-        logger.warning('Condition number is high: %1.0f. Consider fixing multicollinearity.',
+        logger.warning('Condition number is high: %1.0f. Consider fixing scaling and multicollinearity.',
                        estimate.condition_number)
 
     if estimate.diagn['omnipv'] < 0.05:
@@ -138,12 +138,18 @@ def linear_regression(df, predictor, outcome, covariables=None, interactions=Non
                        estimate.diagn['omni'], estimate.diagn['omnipv'])
 
     all_indep_vars = [predictor] + covariables
-    sp_corr, sp_val  = spearmanr(df[all_indep_vars])
-    for i,covar in enumerate(all_indep_vars):
-        for j,covar2 in enumerate(all_indep_vars):
-            if i < j and abs(sp_corr[i,j]) >= 0.5:
+    if len(covariables) > 0:
+        sp_corr, sp_val  = spearmanr(df[all_indep_vars])
+        if len(covariables) > 1:
+            for i,covar in enumerate(all_indep_vars):
+                for j,covar2 in enumerate(all_indep_vars):
+                    if i < j and abs(sp_corr[i,j]) >= 0.5:
+                        logger.warning('Correlated indep. variables: %s, %s - sp_c=%1.3f, sp_pval=%1.4f',
+                                       all_indep_vars[i], all_indep_vars[j], sp_corr[i,j], sp_val[i,j])
+        else:
+            if abs(sp_corr) >= 0.5:
                 logger.warning('Correlated indep. variables: %s, %s - sp_c=%1.3f, sp_pval=%1.4f',
-                               all_indep_vars[i], all_indep_vars[j], sp_corr[i,j], sp_val[i,j])
+                               all_indep_vars[0], all_indep_vars[1], sp_corr, sp_val)
 
     influence = estimate.get_influence()
     dbetas = influence.summary_frame().filter(regex="dfb")
@@ -174,7 +180,7 @@ def linear_regression(df, predictor, outcome, covariables=None, interactions=Non
                 b_scaled.loc[variable] = pd.NA
 
     if normalise_dep_var:
-        b_scaled = b * outcome_std
+        b_scaled = b_scaled * outcome_std
 
     b_scaled.name = 'b_rescaled'
     stats_df = pd.concat((b, Beta, b_scaled, t, p), axis=1)
@@ -194,21 +200,21 @@ def linear_regression(df, predictor, outcome, covariables=None, interactions=Non
 
         if len(covariables) > 0:
             covar_fit = ' ' + ' '.join('%+1.2f*%s' %(estimates[c], c) for c in covariables)
-    
+
         eq_label = ('%s = %s*%s%s %+1.2f (%s)'
                     %(outcome, format_factor(estimates[predictor]),
                       predictor, covar_fit, estimates['const'],
                       format_pvalue(estimate.pvalues[predictor], latex=True)))
-    
+
         if fig is None:
             fig, ax = plt.subplots(figsize=(8, 6))
         else:
             ax = fig.gca()
-    
+
         x = df[predictor]
         y = df[outcome]
         ax.plot(x, y, scatter_symbol, label=scatter_label)
-    
+
         x_bins = np.array([x.min(), x.max()])
         ci = estimate.conf_int()
         iv_l = (ci.loc[predictor, 0] * x_bins + estimate.params['const'] +
@@ -565,7 +571,7 @@ class LinearRegDiagnostic:
         vif_df = pd.DataFrame()
         vif_df["Features"] = self.xvar_names
         vif_df["VIF Factor"] = [
-            variance_inflation_factor(self.xvar, i) for i in range(self.xvar.shape[1])
+                variance_inflation_factor(self.xvar, i) for i in range(self.xvar.shape[1])
         ]
 
         return vif_df.sort_values("VIF Factor").round(2)

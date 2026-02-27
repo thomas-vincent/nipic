@@ -1,19 +1,22 @@
 import tempfile
 import os.path as op
-
-import pandas as pd
-
-import numpy as np
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 from collections import defaultdict
-
 import unittest
 from numpy.testing import assert_allclose
+
+import pandas as pd
+import numpy as np
+from scipy.stats import pearsonr
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 import logging
 logger = logging.getLogger('nipic')
 
 from .utils import two_intervals_intersection, if_none, if_nan, min_pos_value, max_neg_value
+from .stats import pval_to_stars
 
 def two_thresh_cmap(vmin, vmax, col_vmin=None, col_vmax=None,
                     col_thresh_neg=None, col_thresh_pos=None,
@@ -732,3 +735,56 @@ def draw_vol_mapping(values_to_map, region_template_fn, t1_template_fn,
 
         cmd = ['inkscape', tmp_svg_fn, '--export-png=%s' % figure_fn]
         subprocess.check_output(cmd)
+
+
+def plot_pairwise_corr_matrix(data_df, cmap=None, norm=None, pearson_coeff_fontsize=None):
+    """
+    Fontsizes : float or {'xx-small', 'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large'}
+    """
+    cmap = if_none(cmap, mpl.colormaps['coolwarm'])
+    norm = if_none(norm, mpl.colors.Normalize(vmin=-1, vmax=1))
+
+    if pearson_coeff_fontsize is None:
+        pearson_coeff_fontsize = 'medium'
+        if data_df.shape[1] < 4:
+            pearson_coeff_fontsize = 'xx-large'
+
+    def reg_coef(x,y,label=None,color=None,**kwargs):
+        ax = plt.gca()
+        m_na = pd.isna(pd.concat((x,y), axis=1)).any(axis=1)
+        if m_na.any():
+            # print('WARNING: fitler %d rows because they contain nans' % m_na.sum())
+            x = x[~m_na]
+            y = y[~m_na]
+
+        r,p = pearsonr(x,y)
+        pstars = pval_to_stars(p)
+        left, right = ax.get_xlim()
+        bottom, top = ax.get_ylim()
+        width = right-left
+        height = top-bottom
+        shrinkage = 0.02
+        hcorr = width * shrinkage / 2
+        vcorr = height * shrinkage / 2
+        rect_color = cmap(norm(r))
+        rect = mpl.patches.Rectangle((left+hcorr, bottom+vcorr), width-hcorr*2, height-vcorr*2,
+                                     facecolor=rect_color, edgecolor='black')
+        ax.add_patch(rect)
+        ax.annotate('%.2f%s' % (r, pstars), xy=(0.5,0.45), xycoords='axes fraction',
+                    ha='center', color='black', fontsize=pearson_coeff_fontsize)
+        ax.set_axis_off()
+
+    g = sns.PairGrid(data_df, layout_pad=0)
+    g.map_diag(sns.histplot, color='black', stat='count', common_norm=False)
+    g.map_lower(sns.regplot, color='black')
+    g.map_upper(reg_coef)
+    g.tight_layout()
+
+    fig_colorbar, ax = plt.subplots()
+    cbar = fig_colorbar.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax)
+
+    colorbar_label = 'pearson R'
+    cbar.ax.set_ylabel(colorbar_label)
+    ax.remove()
+
+    return g, fig_colorbar
